@@ -313,3 +313,37 @@ impl crate::Behavior for Saturating {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use checked_rs_derive::clamped;
+
+    use super::*;
+    use crate::prelude::*;
+
+    #[test]
+    fn test_define() {
+        #[clamped(u8; default = 1; behavior = Panicking)]
+        #[derive(Debug, Clone, Copy)]
+        pub enum Example {
+            #[eq(0)]
+            Nil,
+            #[other]
+            Valid,
+            #[eq(u8::MAX)]
+            Invalid,
+        }
+
+        let a: Example = Default::default();
+        let b: Example = 254.into();
+        let c = a + b;
+
+        assert!(a.is_valid());
+        assert!(b.is_valid());
+        assert!(c.is_invalid());
+
+        let d: Example = c - u8::MAX;
+
+        assert!(d.is_nil());
+    }
+}
