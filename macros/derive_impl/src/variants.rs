@@ -243,22 +243,96 @@ impl Variants {
             }
         }
 
-        Self {
+        // check that all possible values between `params.lower_limit_value()` and `params.upper_limit_value()` are covered
+        let has_catchall = catchall.is_some();
+        let lower_limit = params.lower_limit_value();
+        let upper_limit = params.upper_limit_value();
+        let mut covered = if !has_catchall {
+            HashSet::with_capacity((upper_limit - lower_limit + 1) as usize)
+        } else {
+            HashSet::new()
+        };
+
+        let this = Self {
             name,
+            mod_name,
+            inner_name,
             exacts: exacts
                 .into_iter()
-                .map(|(n, v)| ExactVariant { ident: v, value: n })
+                .map(|(n, v)| {
+                    if !has_catchall {
+                        covered.insert(n);
+                    }
+
+                    ExactVariant { ident: v, value: n }
+                })
                 .collect(),
             ranges: ranges
                 .into_iter()
-                .map(|(s, e, h, v)| RangeVariant {
+                .map(|(s, e, h, v)| {
+                    if !has_catchall {
+                        match (s, e) {
+                            (Some(s), Some(e)) => {
+                                if h {
+                                    for n in s..e {
+                                        covered.insert(n);
+                                    }
+                                } else {
+                                    for n in s..=e {
+                                        covered.insert(n);
+                                    }
+                                }
+                            }
+                            (Some(s), None) => {
+                                if h {
+                                    for n in s..upper_limit {
+                                        covered.insert(n);
+                                    }
+                                } else {
+                                    for n in s..=upper_limit {
+                                        covered.insert(n);
+                                    }
+                                }
+                            }
+                            (None, Some(e)) => {
+                                if h {
+                                    for n in lower_limit..e {
+                                        covered.insert(n);
+                                    }
+                                } else {
+                                    for n in lower_limit..=e {
+                                        covered.insert(n);
+                                    }
+                                }
+                            }
+                            (None, None) => unreachable!("At least one bound must be present"),
+                        }
+                    }
+
+                    RangeVariant {
                     ident: v,
                     start: s,
                     end: e,
                     half_open: h,
+                    }
                 })
                 .collect(),
             catchall,
+        };
+
+        if !has_catchall {
+            for n in lower_limit..=upper_limit {
+                if !covered.contains(&n) {
+                    emit_error! {
+                        item,
+                        "The value `{}` is not covered by any variant",
+                        n;
+                        hint = "Add a catchall variant with `#[other]` attribute";
+                    }
+                }
+            }
         }
+
+        this
     }
 }
