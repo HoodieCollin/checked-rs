@@ -1,0 +1,40 @@
+[package]
+  edition = "2021"
+  name    = "checked-rs"
+  version = "0.1.0"
+
+[workspace]
+  members = ["macros/derive", "macros/derive_impl"]
+
+  [workspace.dependencies.quote]
+    version = "1.0"
+
+  [workspace.dependencies.syn]
+    features = ["derive", "full", "visit-mut"]
+    version  = "2.0"
+
+  [workspace.dependencies.proc-macro2]
+    version = "1.0"
+
+  [workspace.dependencies.proc-macro-error]
+    version = "1.0"
+
+
+[dependencies.anyhow]
+  version = "1.0"
+
+[dependencies.checked-rs-derive]
+  path = "macros/derive"
+
+[dependencies.paste]
+  version = "1.0"
+
+[dependencies.serde]
+  features = ["derive"]
+  version  = "1.0"
+
+[dependencies.thiserror]
+  version = "1.0"
+
+[dependencies.rand]
+  version = "0.8"

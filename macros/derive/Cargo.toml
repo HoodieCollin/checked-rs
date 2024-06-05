@@ -1,0 +1,24 @@
+[package]
+  edition = "2021"
+  name    = "checked-rs-derive"
+  publish = false
+  version = "0.1.0"
+
+[lib]
+  proc-macro = true
+
+[dependencies.quote]
+  version = "1.0"
+
+[dependencies.syn]
+  features = ["derive", "full"]
+  version  = "2.0"
+
+[dependencies.proc-macro2]
+  version = "1.0"
+
+[dependencies.proc-macro-error]
+  version = "1.0"
+
+[dependencies.checked-rs-derive-impl]
+  path = "../derive_impl"

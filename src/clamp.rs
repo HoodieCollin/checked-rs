@@ -1,0 +1,315 @@
+use crate::{InherentBehavior, UInteger, UIntegerLimits};
+use anyhow::Result;
+
+pub mod guard;
+pub mod hard;
+pub mod soft;
+
+pub trait EnumRepr<T: UInteger>:
+    'static + Default + Eq + Ord + InherentBehavior + UIntegerLimits
+{
+    fn from_uint(value: T) -> Result<Self>;
+    fn as_uint(&self) -> &T;
+
+    fn into_uint(&self) -> T {
+        *self.as_uint()
+    }
+}
+
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+pub enum ClampError {
+    #[error("Value too small: {val} (min: {min})")]
+    TooSmall { val: u128, min: u128 },
+    #[error("Value too large: {val} (max: {max})")]
+    TooLarge { val: u128, max: u128 },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Panicking {}
+
+impl crate::Behavior for Panicking {
+    fn add<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs + rhs;
+        if (val) > max {
+            panic!("Addition overflow");
+        }
+        if (val) < min {
+            panic!("Addition underflow");
+        }
+        T::from_u128(val)
+    }
+
+    fn sub<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs - rhs;
+        if (val) > max {
+            panic!("Subtraction overflow");
+        }
+        if (val) < min {
+            panic!("Subtraction underflow");
+        }
+        T::from_u128(val)
+    }
+
+    fn mul<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs * rhs;
+        if (val) > max {
+            panic!("Multiplication overflow");
+        }
+        if (val) < min {
+            panic!("Multiplication underflow");
+        }
+        T::from_u128(val)
+    }
+
+    fn div<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs / rhs;
+        if (val) > max {
+            panic!("Division overflow");
+        }
+        if (val) < min {
+            panic!("Division underflow");
+        }
+        T::from_u128(val)
+    }
+
+    fn rem<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs % rhs;
+        if (val) > max {
+            panic!("Remainder overflow");
+        }
+        if (val) < min {
+            panic!("Remainder underflow");
+        }
+        T::from_u128(val)
+    }
+
+    fn bitand<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs & rhs;
+        if (val) > max {
+            panic!("Bitwise AND overflow");
+        }
+        if (val) < min {
+            panic!("Bitwise AND underflow");
+        }
+        T::from_u128(val)
+    }
+
+    fn bitor<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs | rhs;
+        if (val) > max {
+            panic!("Bitwise OR overflow");
+        }
+        if (val) < min {
+            panic!("Bitwise OR underflow");
+        }
+        T::from_u128(val)
+    }
+
+    fn bitxor<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs ^ rhs;
+        if (val) > max {
+            panic!("Bitwise XOR overflow");
+        }
+        if (val) < min {
+            panic!("Bitwise XOR underflow");
+        }
+        T::from_u128(val)
+    }
+
+    fn shl<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs << rhs;
+        if (val) > max {
+            panic!("Bitwise shift left overflow");
+        }
+        if (val) < min {
+            panic!("Bitwise shift left underflow");
+        }
+        T::from_u128(val)
+    }
+
+    fn shr<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs >> rhs;
+        if (val) > max {
+            panic!("Bitwise shift right overflow");
+        }
+        if (val) < min {
+            panic!("Bitwise shift right underflow");
+        }
+        T::from_u128(val)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Saturating {}
+
+impl crate::Behavior for Saturating {
+    fn add<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs.saturating_add(rhs);
+        T::from_u128(if (val) > max {
+            max
+        } else if (val) < min {
+            min
+        } else {
+            val
+        })
+    }
+
+    fn sub<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs.saturating_sub(rhs);
+        T::from_u128(if (val) > max {
+            max
+        } else if (val) < min {
+            min
+        } else {
+            val
+        })
+    }
+
+    fn mul<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs.saturating_mul(rhs);
+        T::from_u128(if (val) > max {
+            max
+        } else if (val) < min {
+            min
+        } else {
+            val
+        })
+    }
+
+    fn div<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs.saturating_div(rhs);
+        T::from_u128(if (val) > max {
+            max
+        } else if (val) < min {
+            min
+        } else {
+            val
+        })
+    }
+
+    fn rem<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs % rhs;
+        T::from_u128(if (val) > max {
+            max
+        } else if (val) < min {
+            min
+        } else {
+            val
+        })
+    }
+
+    fn bitand<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs & rhs;
+        T::from_u128(if (val) > max {
+            max
+        } else if (val) < min {
+            min
+        } else {
+            val
+        })
+    }
+
+    fn bitor<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs | rhs;
+        T::from_u128(if (val) > max {
+            max
+        } else if (val) < min {
+            min
+        } else {
+            val
+        })
+    }
+
+    fn bitxor<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs ^ rhs;
+        T::from_u128(if (val) > max {
+            max
+        } else if (val) < min {
+            min
+        } else {
+            val
+        })
+    }
+
+    fn shl<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs << rhs;
+        T::from_u128(if (val) > max {
+            max
+        } else if (val) < min {
+            min
+        } else {
+            val
+        })
+    }
+
+    fn shr<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
+        let lhs = lhs.into_u128();
+        let rhs = rhs.into_u128();
+
+        let val = lhs >> rhs;
+        T::from_u128(if (val) > max {
+            max
+        } else if (val) < min {
+            min
+        } else {
+            val
+        })
+    }
+}

@@ -1,0 +1,14 @@
+{
+  "cSpell.words": [
+    "bitand",
+    "Hasher",
+    "idents",
+    "Repr",
+    "thiserror",
+    "uinteger"
+  ],
+  "[rust]": {
+    "editor.indentSize": "tabSize",
+    "editor.tabSize": 4
+  }
+}

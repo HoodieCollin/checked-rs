@@ -1,0 +1,20 @@
+[package]
+  edition = "2021"
+  name    = "checked-rs-derive-impl"
+  publish = false
+  version = "0.1.0"
+
+[dependencies]
+  serde_yaml = "0.9"
+
+  [dependencies.quote]
+    workspace = true
+
+  [dependencies.syn]
+    workspace = true
+
+  [dependencies.proc-macro2]
+    workspace = true
+
+  [dependencies.proc-macro-error]
+    workspace = true
