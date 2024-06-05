@@ -109,7 +109,7 @@ mod tests {
 
         *clamp = 30;
         assert_eq!(*clamp, 30);
-        assert!(!clamp.is_valid());
+        assert_eq!(clamp.is_valid(), false);
 
         Ok(())
     }
