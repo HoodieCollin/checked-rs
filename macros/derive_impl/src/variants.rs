@@ -1,9 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
+use convert_case::{Case, Casing};
 use proc_macro_error::{abort, emit_error};
+use quote::format_ident;
 use syn::parse_quote;
 
-use crate::params::ClampParams;
+use crate::params::{ClampParams, UIntegerArg};
 
 #[derive(Debug)]
 pub struct ExactVariant {
@@ -36,6 +38,8 @@ pub struct RangeVariant {
 #[derive(Debug)]
 pub struct Variants {
     pub name: syn::Ident,
+    pub mod_name: syn::Ident,
+    pub inner_name: syn::Ident,
     pub exacts: HashSet<ExactVariant>,
     pub ranges: Vec<RangeVariant>,
     pub catchall: Option<syn::Ident>,
@@ -55,6 +59,9 @@ impl Variants {
         }
 
         let name = data.ident.clone();
+        let mod_name = format_ident!("clamped_{}", name.to_string().to_case(Case::Snake));
+        let inner_name = format_ident!("{}UInt", name);
+
         let ty = &params.uinteger;
 
         let mut exacts = HashMap::new();
@@ -87,7 +94,7 @@ impl Variants {
                     "eq" => {
                         to_remove.push(i);
 
-                        if let Ok(val) = attr.parse_args::<syn::LitInt>() {
+                        if let Ok(val) = attr.parse_args::<UIntegerArg>() {
                             let n;
 
                             match val.base10_parse::<u128>() {
@@ -116,7 +123,7 @@ impl Variants {
                             params.abort_if_out_of_bounds(attr, n);
 
                             variant.fields = syn::Fields::Unnamed(parse_quote! {
-                                (#ty)
+                                (#inner_name<#ty>)
                             });
                         } else {
                             emit_error! {
@@ -144,17 +151,12 @@ impl Variants {
                                     }
                                 };
 
-                                match val {
-                                    syn::Expr::Lit(syn::ExprLit { lit, .. })
-                                        if let syn::Lit::Int(x) = lit =>
-                                    {
-                                        if let Ok(num) = x.base10_parse::<u128>() {
-                                            Ok(Some(num))
-                                        } else {
-                                            Err(())
-                                        }
-                                    }
-                                    _ => Ok(None),
+                                let val: UIntegerArg = parse_quote!(#val);
+
+                                if let Ok(num) = val.base10_parse::<u128>() {
+                                    Ok(Some(num))
+                                } else {
+                                    Err(())
                                 }
                             }
 
@@ -209,7 +211,7 @@ impl Variants {
                             ranges.push((start, end, half_open, variant.ident.clone()));
 
                             variant.fields = syn::Fields::Unnamed(parse_quote! {
-                                (#ty)
+                                (#inner_name<#ty>)
                             });
                         } else {
                             emit_error! {
@@ -231,7 +233,7 @@ impl Variants {
                         catchall = Some(variant.ident.clone());
 
                         variant.fields = syn::Fields::Unnamed(parse_quote! {
-                            (#ty)
+                            (#inner_name<#ty>)
                         });
                     }
                     _ => {}
@@ -310,10 +312,10 @@ impl Variants {
                     }
 
                     RangeVariant {
-                    ident: v,
-                    start: s,
-                    end: e,
-                    half_open: h,
+                        ident: v,
+                        start: s,
+                        end: e,
+                        half_open: h,
                     }
                 })
                 .collect(),

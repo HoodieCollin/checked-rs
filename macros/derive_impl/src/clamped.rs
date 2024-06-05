@@ -1,124 +1,112 @@
+use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::variants::{ExactVariant, RangeVariant, Variants};
+use crate::{
+    params::UIntKind,
+    variants::{ExactVariant, RangeVariant, Variants},
+};
 
 pub use crate::params::ClampParams;
 
 pub fn clamped(attr: ClampParams, mut item: syn::Item) -> TokenStream {
     let variants = Variants::from_item(&attr, &mut item);
     let name = &variants.name;
-    let assignable = variants.catchall.is_some();
+    let mod_name = &variants.mod_name;
+    let inner_name = &variants.inner_name;
 
     let implementations = TokenStream::from_iter(vec![
-        impl_enum_repr(name, &attr, &variants),
+        impl_enum_repr(name, &inner_name, &attr, &variants),
         impl_deref(name, &attr),
         impl_conversions(name, &attr),
         impl_self_eq(name),
         impl_self_cmp(name),
         impl_other_eq(name, &attr),
         impl_other_compare(name, &attr),
-        impl_binary_op(
-            name,
-            &attr,
-            format_ident!("Add"),
-            format_ident!("add"),
-            assignable,
-        ),
-        impl_binary_op(
-            name,
-            &attr,
-            format_ident!("Sub"),
-            format_ident!("sub"),
-            assignable,
-        ),
-        impl_binary_op(
-            name,
-            &attr,
-            format_ident!("Mul"),
-            format_ident!("mul"),
-            assignable,
-        ),
-        impl_binary_op(
-            name,
-            &attr,
-            format_ident!("Div"),
-            format_ident!("div"),
-            assignable,
-        ),
-        impl_binary_op(
-            name,
-            &attr,
-            format_ident!("Rem"),
-            format_ident!("rem"),
-            assignable,
-        ),
+        impl_binary_op(name, &attr, format_ident!("Add"), format_ident!("add")),
+        impl_binary_op(name, &attr, format_ident!("Sub"), format_ident!("sub")),
+        impl_binary_op(name, &attr, format_ident!("Mul"), format_ident!("mul")),
+        impl_binary_op(name, &attr, format_ident!("Div"), format_ident!("div")),
+        impl_binary_op(name, &attr, format_ident!("Rem"), format_ident!("rem")),
         impl_binary_op(
             name,
             &attr,
             format_ident!("BitAnd"),
             format_ident!("bitand"),
-            assignable,
         ),
-        impl_binary_op(
-            name,
-            &attr,
-            format_ident!("BitOr"),
-            format_ident!("bitor"),
-            assignable,
-        ),
+        impl_binary_op(name, &attr, format_ident!("BitOr"), format_ident!("bitor")),
         impl_binary_op(
             name,
             &attr,
             format_ident!("BitXor"),
             format_ident!("bitxor"),
-            assignable,
         ),
-        impl_binary_op(
-            name,
-            &attr,
-            format_ident!("Shl"),
-            format_ident!("shl"),
-            assignable,
-        ),
-        impl_binary_op(
-            name,
-            &attr,
-            format_ident!("Shr"),
-            format_ident!("shr"),
-            assignable,
-        ),
+        impl_binary_op(name, &attr, format_ident!("Shl"), format_ident!("shl")),
+        impl_binary_op(name, &attr, format_ident!("Shr"), format_ident!("shr")),
     ]);
 
     quote! {
-        #item
+        mod #mod_name {
+            use super::*;
 
-        #implementations
+            #[derive(Clone, Copy)]
+            pub struct #inner_name<T>(pub(self) T);
+
+            impl<T> std::fmt::Debug for #inner_name<T>
+            where
+                T: std::fmt::Debug,
+            {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    self.0.fmt(f)
+                }
+            }
+
+            #item
+
+            #implementations
+        }
+
+        pub use #mod_name::#name;
     }
 }
 
-fn impl_enum_repr(name: &syn::Ident, attr: &ClampParams, variants: &Variants) -> TokenStream {
+fn impl_enum_repr(
+    name: &syn::Ident,
+    inner_name: &syn::Ident,
+    attr: &ClampParams,
+    variants: &Variants,
+) -> TokenStream {
     let uinteger = &attr.uinteger;
     let behavior = &attr.behavior_val;
     let lower_limit = attr.lower_limit_token();
     let upper_limit = attr.upper_limit_token();
 
+    let mut is_exact_case_method = Vec::with_capacity(variants.exacts.len());
+    let mut is_range_case_method = Vec::with_capacity(variants.ranges.len());
     let mut from_exact_cases = Vec::with_capacity(variants.exacts.len());
     let mut from_range_cases = Vec::with_capacity(variants.ranges.len());
     let mut as_uint_cases = Vec::with_capacity(variants.exacts.len());
 
+    let mut is_catchall_case_method = None;
     let from_catchall_case;
 
     // Generate exact match cases
     for ExactVariant { ident, value } in &variants.exacts {
         let value = syn::parse_str::<TokenStream>(&value.to_string()).unwrap();
+        let method_name = format_ident!("is_{}", ident.to_string().to_case(Case::Snake));
+
+        is_exact_case_method.push(quote! {
+            pub fn #method_name(&self) -> bool {
+                matches!(self, Self::#ident(_))
+            }
+        });
 
         from_exact_cases.push(quote! {
-            #value => Self::#ident(n),
+            #value => Self::#ident(#inner_name(n)),
         });
 
         as_uint_cases.push(quote! {
-            Self::#ident(n) => n,
+            Self::#ident(#inner_name(n)) => n,
         });
     }
 
@@ -159,22 +147,38 @@ fn impl_enum_repr(name: &syn::Ident, attr: &ClampParams, variants: &Variants) ->
             });
         }
 
+        let method_name = format_ident!("is_{}", ident.to_string().to_case(Case::Snake));
+
+        is_range_case_method.push(quote! {
+            pub fn #method_name(&self) -> bool {
+                matches!(self, Self::#ident(_))
+            }
+        });
+
         from_range_cases.push(quote! {
-            #(#range_tokens)* => Self::#ident(n),
+            #(#range_tokens)* => Self::#ident(#inner_name(n)),
         });
 
         as_uint_cases.push(quote! {
-            Self::#ident(n) => n,
+            Self::#ident(#inner_name(n)) => n,
         });
     }
 
     if let Some(other) = &variants.catchall {
+        let method_name = format_ident!("is_{}", other.to_string().to_lowercase());
+
+        is_catchall_case_method = Some(quote! {
+            pub fn #method_name(&self) -> bool {
+                matches!(self, Self::#other(_))
+            }
+        });
+
         from_catchall_case = quote! {
-            _ => Self::#other(n),
+            _ => Self::#other(#inner_name(n)),
         };
 
         as_uint_cases.push(quote! {
-            Self::#other(n) => n,
+            Self::#other(#inner_name(n)) => n,
         });
     } else {
         from_catchall_case = quote! {
@@ -182,9 +186,19 @@ fn impl_enum_repr(name: &syn::Ident, attr: &ClampParams, variants: &Variants) ->
         };
     }
 
-    let default_value = syn::parse_str::<TokenStream>(&attr.default_val.to_string()).unwrap();
+    let default_value = attr.default_val.into_literal_as_tokens();
+    let methods = TokenStream::from_iter(
+        is_exact_case_method
+            .into_iter()
+            .chain(is_range_case_method.into_iter())
+            .chain(is_catchall_case_method.into_iter()),
+    );
 
     quote! {
+        impl #name {
+            #methods
+        }
+
         impl crate::prelude::UIntegerLimits for #name {
             const MIN: u128 = #lower_limit;
             const MAX: u128 = #upper_limit;
@@ -240,7 +254,8 @@ fn impl_deref(name: &syn::Ident, attr: &ClampParams) -> TokenStream {
 }
 
 fn impl_conversions(name: &syn::Ident, attr: &ClampParams) -> TokenStream {
-    let mut conversions = Vec::with_capacity(5);
+    let uinteger = &attr.uinteger;
+    let mut conversions = Vec::with_capacity(10);
 
     if attr.is_u128_or_smaller() {
         conversions.push(quote! {
@@ -252,11 +267,31 @@ fn impl_conversions(name: &syn::Ident, attr: &ClampParams) -> TokenStream {
         });
     }
 
+    if matches!(attr.kind(), UIntKind::U128) {
+        conversions.push(quote! {
+            impl From<u128> for #name {
+                fn from(val: u128) -> Self {
+                    Self::from_uint(val).expect("value should be within bounds")
+                }
+            }
+        });
+    }
+
     if attr.is_u64_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for u64 {
-                fn from(val: #name  ) -> Self {
+                fn from(val: #name) -> Self {
                     val.into_uint() as u64
+                }
+            }
+        });
+    }
+
+    if attr.is_u64_or_larger() {
+        conversions.push(quote! {
+            impl From<u64> for #name {
+                fn from(val: u64) -> Self {
+                    Self::from_uint(val as #uinteger).expect("value should be within bounds")
                 }
             }
         });
@@ -265,8 +300,18 @@ fn impl_conversions(name: &syn::Ident, attr: &ClampParams) -> TokenStream {
     if attr.is_u32_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for u32 {
-                fn from(val: #name  ) -> Self {
+                fn from(val: #name) -> Self {
                     val.into_uint() as u32
+                }
+            }
+        });
+    }
+
+    if attr.is_u32_or_larger() {
+        conversions.push(quote! {
+            impl From<u32> for #name {
+                fn from(val: u32) -> Self {
+                    Self::from_uint(val as #uinteger).expect("value should be within bounds")
                 }
             }
         });
@@ -275,17 +320,27 @@ fn impl_conversions(name: &syn::Ident, attr: &ClampParams) -> TokenStream {
     if attr.is_u16_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for u16 {
-                fn from(val: #name  ) -> Self {
+                fn from(val: #name) -> Self {
                     val.into_uint() as u16
                 }
             }
         });
     }
 
-    if attr.is_u8() {
+    if attr.is_u16_or_larger() {
+        conversions.push(quote! {
+            impl From<u16> for #name {
+                fn from(val: u16) -> Self {
+                    Self::from_uint(val as #uinteger).expect("value should be within bounds")
+                }
+            }
+        });
+    }
+
+    if matches!(attr.kind(), UIntKind::U8) {
         conversions.push(quote! {
             impl From<#name> for u8 {
-                fn from(val: #name  ) -> Self {
+                fn from(val: #name) -> Self {
                     val.into_uint() as u8
                 }
             }
@@ -294,6 +349,12 @@ fn impl_conversions(name: &syn::Ident, attr: &ClampParams) -> TokenStream {
 
     quote! {
         #(#conversions)*
+
+        impl From<u8> for #name {
+            fn from(val: u8) -> Self {
+                Self::from_uint(val as #uinteger).expect("value should be within bounds")
+            }
+        }
     }
 }
 
@@ -433,13 +494,15 @@ fn impl_binary_op(
     attr: &ClampParams,
     trait_name: syn::Ident,
     method_name: syn::Ident,
-    assignable: bool,
 ) -> TokenStream {
     let uinteger = &attr.uinteger;
     let lower = attr.lower_limit_token();
     let upper = attr.upper_limit_token();
 
-    let main = quote! {
+    let assign_trait_name = format_ident!("{}Assign", trait_name);
+    let assign_method_name = format_ident!("{}_assign", method_name);
+
+    quote! {
         impl std::ops:: #trait_name for #name {
             type Output = #name;
 
@@ -456,31 +519,19 @@ fn impl_binary_op(
             }
         }
 
-    };
-
-    if !assignable {
-        main
-    } else {
-        let assign_trait_name = format_ident!("{}Assign", trait_name);
-        let assign_method_name = format_ident!("{}_assign", method_name);
-
-        quote! {
-            #main
-
-            impl std::ops:: #assign_trait_name for #name {
-                fn #assign_method_name (&mut self, rhs: #name) {
-                    *self = Self::from_uint(
-                        <Self as crate::prelude::InherentBehavior>::Behavior::#method_name(self.into_uint(), rhs.into_uint(), #lower, #upper)
-                    ).expect("assignable operations should be infallible");
-                }
+        impl std::ops:: #assign_trait_name for #name {
+            fn #assign_method_name (&mut self, rhs: #name) {
+                *self = Self::from_uint(
+                    <Self as crate::prelude::InherentBehavior>::Behavior::#method_name(self.into_uint(), rhs.into_uint(), #lower, #upper)
+                ).expect("assignable operations should be infallible");
             }
+        }
 
-            impl std::ops:: #assign_trait_name<#uinteger> for #name {
-                fn #assign_method_name (&mut self, rhs: #uinteger) {
-                    *self = Self::from_uint(
-                        <Self as crate::prelude::InherentBehavior>::Behavior::#method_name(self.into_uint(), rhs, #lower, #upper)
-                    ).expect("assignable operations should be infallible");
-                }
+        impl std::ops:: #assign_trait_name<#uinteger> for #name {
+            fn #assign_method_name (&mut self, rhs: #uinteger) {
+                *self = Self::from_uint(
+                    <Self as crate::prelude::InherentBehavior>::Behavior::#method_name(self.into_uint(), rhs, #lower, #upper)
+                ).expect("assignable operations should be infallible");
             }
         }
     }
