@@ -195,7 +195,3 @@ This project is dual-licensed under the Apache 2.0 and MIT licenses.
 ## Contact and Support
 
 For support or further questions, please open a GitHub issue.
-
----
-
-Does this look good to you, or would you like to make any changes or additions?
