@@ -1,7 +1,21 @@
+use proc_macro2::TokenStream;
 use proc_macro_error::abort;
-use quote::ToTokens;
+use quote::{quote, ToTokens};
 use syn::{parse::Parse, parse_quote, spanned::Spanned};
 
+/// Custom keywords used when parsing the `clamped` attribute.
+mod kw {
+    syn::custom_keyword!(default);
+    syn::custom_keyword!(behavior);
+    syn::custom_keyword!(lower);
+    syn::custom_keyword!(upper);
+    syn::custom_keyword!(Saturating);
+    syn::custom_keyword!(Panicking);
+    syn::custom_keyword!(MIN);
+    syn::custom_keyword!(MAX);
+}
+
+/// Represents the size of unsigned integer.
 #[derive(Debug, Clone)]
 pub enum UIntKind {
     U8,
@@ -11,32 +25,211 @@ pub enum UIntKind {
     U128,
 }
 
-mod kw {
-    syn::custom_keyword!(default);
-    syn::custom_keyword!(behavior);
-    syn::custom_keyword!(lower);
-    syn::custom_keyword!(upper);
+impl Parse for UIntKind {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let ident = input.parse::<syn::Ident>()?;
+        match ident.to_string().as_str() {
+            "u8" => Ok(Self::U8),
+            "u16" => Ok(Self::U16),
+            "u32" => Ok(Self::U32),
+            "u64" => Ok(Self::U64),
+            "u128" => Ok(Self::U128),
+            _ => abort!(ident, "expected unsigned integer type"),
+        }
+    }
 }
 
+impl ToTokens for UIntKind {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let kind = match self {
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::U128 => "u128",
+        };
+
+        tokens.extend(syn::parse_str::<TokenStream>(kind).unwrap());
+    }
+}
+
+/// Represents the `MIN` or `MAX` keyword.
+#[derive(Clone)]
+pub enum MinOrMax {
+    Min(kw::MIN),
+    Max(kw::MAX),
+}
+
+impl Parse for MinOrMax {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(kw::MIN) {
+            Ok(Self::Min(input.parse()?))
+        } else if input.peek(kw::MAX) {
+            Ok(Self::Max(input.parse()?))
+        } else {
+            Err(input.error("expected `MIN` or `MAX`"))
+        }
+    }
+}
+
+impl ToTokens for MinOrMax {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::Min(kw) => kw.to_tokens(tokens),
+            Self::Max(kw) => kw.to_tokens(tokens),
+        }
+    }
+}
+
+/// Represents the unsigned integer argument. It can be a literal or a the MIN/MAX constant.
+#[derive(Clone)]
+pub enum UIntegerArg {
+    Literal(syn::LitInt),
+    Constant {
+        kind: UIntKind,
+        dbl_colon: syn::Token![::],
+        ident: MinOrMax,
+    },
+}
+
+impl Parse for UIntegerArg {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(syn::LitInt) {
+            Ok(Self::Literal(input.parse()?))
+        } else {
+            let kind = input.parse()?;
+            let dbl_colon = input.parse()?;
+            let ident: MinOrMax = input.parse()?;
+
+            Ok(Self::Constant {
+                kind,
+                dbl_colon,
+                ident,
+            })
+        }
+    }
+}
+
+impl ToTokens for UIntegerArg {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::Literal(lit) => lit.to_tokens(tokens),
+            Self::Constant {
+                kind,
+                dbl_colon,
+                ident,
+            } => {
+                let kind = kind.to_token_stream();
+                let dbl_colon = dbl_colon.to_token_stream();
+                let ident = ident.to_token_stream();
+
+                tokens.extend(quote! {
+                    #kind #dbl_colon #ident
+                });
+            }
+        }
+    }
+}
+
+impl UIntegerArg {
+    /// Output the value as a bare literal number in a token stream.
+    pub fn into_literal_as_tokens(&self) -> TokenStream {
+        syn::parse_str(self.base10_parse::<u128>().unwrap().to_string().as_str()).unwrap()
+    }
+
+    /// Parse the value as a base 10 number.
+    pub fn base10_parse<N>(&self) -> syn::Result<N>
+    where
+        N: std::str::FromStr,
+        N::Err: std::fmt::Display,
+    {
+        match self {
+            Self::Literal(lit) => lit.base10_parse::<N>(),
+            Self::Constant {
+                kind,
+                dbl_colon: _,
+                ident,
+            } => {
+                let n = match ident {
+                    MinOrMax::Min(..) => match kind {
+                        UIntKind::U8 => u8::MIN.to_string(),
+                        UIntKind::U16 => u16::MIN.to_string(),
+                        UIntKind::U32 => u32::MIN.to_string(),
+                        UIntKind::U64 => u64::MIN.to_string(),
+                        UIntKind::U128 => u128::MIN.to_string(),
+                    },
+                    MinOrMax::Max(..) => match kind {
+                        UIntKind::U8 => u8::MAX.to_string(),
+                        UIntKind::U16 => u16::MAX.to_string(),
+                        UIntKind::U32 => u32::MAX.to_string(),
+                        UIntKind::U64 => u64::MAX.to_string(),
+                        UIntKind::U128 => u128::MAX.to_string(),
+                    },
+                };
+
+                match str::parse(&n) {
+                    Ok(n) => Ok(n),
+                    Err(e) => Err(syn::Error::new(ident.span(), e)),
+                }
+            }
+        }
+    }
+}
+
+/// Represents the behavior argument. It can be `Saturating` or `Panicking`.
+#[derive(Clone)]
+pub enum BehaviorArg {
+    Saturating(kw::Saturating),
+    Panicking(kw::Panicking),
+}
+
+impl Parse for BehaviorArg {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(kw::Saturating) {
+            Ok(Self::Saturating(input.parse()?))
+        } else if input.peek(kw::Panicking) {
+            Ok(Self::Panicking(input.parse()?))
+        } else {
+            Err(input.error("expected `Saturating` or `Panicking`"))
+        }
+    }
+}
+
+impl ToTokens for BehaviorArg {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        tokens.extend(match self {
+            Self::Saturating(..) => quote! {
+                Saturating
+            },
+            Self::Panicking(..) => quote! {
+                Panicking
+            },
+        });
+    }
+}
+
+/// Represents the parameters of the `clamped` attribute.
+/// Only the `uinteger` and `default` parameters are required.
+/// The `uinteger` parameter must be first while the order of the rest is not important.
 #[derive(Clone)]
 pub struct ClampParams {
     pub uinteger: syn::TypePath,
     pub uinteger_semi: syn::Token![;],
     pub default_kw: kw::default,
     pub default_eq: syn::Token![=],
-    pub default_val: syn::LitInt,
+    pub default_val: UIntegerArg,
     pub default_semi: Option<syn::Token![;]>,
     pub behavior_kw: kw::behavior,
     pub behavior_eq: syn::Token![=],
-    pub behavior_val: syn::TypePath,
+    pub behavior_val: BehaviorArg,
     pub behavior_semi: Option<syn::Token![;]>,
     pub lower_kw: Option<kw::lower>,
     pub lower_eq: Option<syn::Token![=]>,
-    pub lower_val: Option<syn::LitInt>,
+    pub lower_val: Option<UIntegerArg>,
     pub lower_semi: Option<syn::Token![;]>,
     pub upper_kw: Option<kw::upper>,
     pub upper_eq: Option<syn::Token![=]>,
-    pub upper_val: Option<syn::LitInt>,
+    pub upper_val: Option<UIntegerArg>,
     pub upper_semi: Option<syn::Token![;]>,
 }
 
@@ -73,7 +266,7 @@ impl Parse for ClampParams {
 
                 default_kw = Some(input.parse::<kw::default>()?);
                 default_eq = Some(input.parse::<syn::Token![=]>()?);
-                default_val = Some(input.parse::<syn::LitInt>()?);
+                default_val = Some(input.parse::<UIntegerArg>()?);
                 if !input.is_empty() {
                     default_semi = Some(input.parse::<syn::Token![;]>()?);
                     found_semi = true;
@@ -85,7 +278,7 @@ impl Parse for ClampParams {
 
                 behavior_kw = Some(input.parse::<kw::behavior>()?);
                 behavior_eq = Some(input.parse::<syn::Token![=]>()?);
-                behavior_val = Some(input.parse::<syn::TypePath>()?);
+                behavior_val = Some(input.parse::<BehaviorArg>()?);
                 if !input.is_empty() {
                     behavior_semi = Some(input.parse::<syn::Token![;]>()?);
                     found_semi = true;
@@ -97,7 +290,7 @@ impl Parse for ClampParams {
 
                 lower_kw = Some(input.parse::<kw::lower>()?);
                 lower_eq = Some(input.parse::<syn::Token![=]>()?);
-                lower_val = Some(input.parse::<syn::LitInt>()?);
+                lower_val = Some(input.parse::<UIntegerArg>()?);
                 if !input.is_empty() {
                     lower_semi = Some(input.parse::<syn::Token![;]>()?);
                     found_semi = true;
@@ -109,7 +302,7 @@ impl Parse for ClampParams {
 
                 upper_kw = Some(input.parse::<kw::upper>()?);
                 upper_eq = Some(input.parse::<syn::Token![=]>()?);
-                upper_val = Some(input.parse::<syn::LitInt>()?);
+                upper_val = Some(input.parse::<UIntegerArg>()?);
                 if !input.is_empty() {
                     upper_semi = Some(input.parse::<syn::Token![;]>()?);
                     found_semi = true;
@@ -117,12 +310,18 @@ impl Parse for ClampParams {
             }
 
             if !found_semi {
-                if default_kw.is_none() || behavior_kw.is_none() {
-                    return Err(input.error("both `default` and `behavior` params are required"));
+                if default_kw.is_none() {
+                    return Err(input.error("`default` param is required"));
                 }
 
                 done = true;
             }
+        }
+
+        if behavior_kw.is_none() {
+            behavior_kw = Some(parse_quote!(behavior));
+            behavior_eq = Some(parse_quote!(=));
+            behavior_val = Some(parse_quote!(Panicking));
         }
 
         let this = Self {
@@ -150,7 +349,7 @@ impl Parse for ClampParams {
             abort!(this.uinteger, "expected unsigned integer type")
         }
 
-        match this.get_kind() {
+        match this.kind() {
             UIntKind::U8 => {
                 if this.default_val.base10_parse::<u8>().is_err() {
                     abort!(this.default_val, "expected u8 value")
@@ -194,7 +393,8 @@ impl Parse for ClampParams {
 }
 
 impl ClampParams {
-    pub fn get_kind(&self) -> UIntKind {
+    /// Get the unsigned integer kind.
+    pub fn kind(&self) -> UIntKind {
         self.uinteger
             .path
             .segments
@@ -211,6 +411,7 @@ impl ClampParams {
             .unwrap_or_else(|| abort!(self.uinteger, "expected unsigned integer type"))
     }
 
+    /// Interpret the default value as `u128`.
     pub fn default_value(&self) -> u128 {
         if let Ok(n) = self.default_val.base10_parse() {
             n
@@ -219,10 +420,12 @@ impl ClampParams {
         }
     }
 
-    pub fn behavior_type(&self) -> &syn::TypePath {
+    /// Get the behavior type.
+    pub fn behavior_type(&self) -> &BehaviorArg {
         &self.behavior_val
     }
 
+    /// Interpret the lower limit value as `u128`.
     pub fn lower_limit_value(&self) -> u128 {
         if let Some(val) = &self.lower_val {
             if let Ok(n) = val.base10_parse() {
@@ -235,10 +438,12 @@ impl ClampParams {
         }
     }
 
-    pub fn lower_limit_token(&self) -> proc_macro2::TokenStream {
+    /// Output the lower limit value as a bare literal in a token stream.
+    pub fn lower_limit_token(&self) -> TokenStream {
         syn::parse_str(&self.lower_limit_value().to_string()).unwrap()
     }
 
+    /// Interpret the upper limit value as `u128`.
     pub fn upper_limit_value(&self) -> u128 {
         if let Some(val) = &self.upper_val {
             if let Ok(n) = val.base10_parse() {
@@ -247,7 +452,7 @@ impl ClampParams {
                 abort!(val, "expected integer value")
             }
         } else {
-            match self.get_kind() {
+            match self.kind() {
                 UIntKind::U8 => u8::MAX as u128,
                 UIntKind::U16 => u16::MAX as u128,
                 UIntKind::U32 => u32::MAX as u128,
@@ -257,50 +462,80 @@ impl ClampParams {
         }
     }
 
-    pub fn upper_limit_token(&self) -> proc_macro2::TokenStream {
+    /// Output the upper limit value as a bare literal in a token stream.
+    pub fn upper_limit_token(&self) -> TokenStream {
         syn::parse_str(&self.upper_limit_value().to_string()).unwrap()
     }
 
+    /// Validate that an arbitrary value is within the lower and upper limit.
     pub fn abort_if_out_of_bounds<T: Spanned + ToTokens>(&self, ast: &T, value: u128) {
         if value < self.lower_limit_value() {
-            abort!(ast, "value is less than lower bound")
+            abort!(
+                ast,
+                "{:?} value: {} is less than lower limit: {}",
+                self.kind(),
+                value,
+                self.lower_limit_value()
+            )
         }
 
         if value > self.upper_limit_value() {
-            abort!(ast, "value exceeds upper bound")
+            abort!(
+                ast,
+                "{:?} value: {} exceeds upper limit: {}",
+                self.kind(),
+                value,
+                self.upper_limit_value()
+            )
         }
     }
 
-    pub fn is_u8(&self) -> bool {
-        matches!(self.get_kind(), UIntKind::U8)
-    }
-
+    /// Check if the unsigned integer kind is `u16` or smaller.
     pub fn is_u16_or_smaller(&self) -> bool {
-        matches!(self.get_kind(), UIntKind::U8 | UIntKind::U16)
+        matches!(self.kind(), UIntKind::U8 | UIntKind::U16)
     }
 
-    pub fn is_u32_or_smaller(&self) -> bool {
+    /// Check if the unsigned integer kind is `u16` or larger.
+    pub fn is_u16_or_larger(&self) -> bool {
         matches!(
-            self.get_kind(),
-            UIntKind::U8 | UIntKind::U16 | UIntKind::U32
+            self.kind(),
+            UIntKind::U16 | UIntKind::U32 | UIntKind::U64 | UIntKind::U128
         )
     }
 
+    /// Check if the unsigned integer kind is `u32` or smaller.
+    pub fn is_u32_or_smaller(&self) -> bool {
+        matches!(self.kind(), UIntKind::U8 | UIntKind::U16 | UIntKind::U32)
+    }
+
+    /// Check if the unsigned integer kind is `u32` or larger.
+    pub fn is_u32_or_larger(&self) -> bool {
+        matches!(self.kind(), UIntKind::U32 | UIntKind::U64 | UIntKind::U128)
+    }
+
+    /// Check if the unsigned integer kind is `u64` or smaller.
     pub fn is_u64_or_smaller(&self) -> bool {
         matches!(
-            self.get_kind(),
+            self.kind(),
             UIntKind::U8 | UIntKind::U16 | UIntKind::U32 | UIntKind::U64
         )
     }
 
+    /// Check if the unsigned integer kind is `u64` or larger.
+    pub fn is_u64_or_larger(&self) -> bool {
+        matches!(self.kind(), UIntKind::U64 | UIntKind::U128)
+    }
+
+    /// Check if the unsigned integer kind is `u128` or smaller.
     pub fn is_u128_or_smaller(&self) -> bool {
         matches!(
-            self.get_kind(),
+            self.kind(),
             UIntKind::U8 | UIntKind::U16 | UIntKind::U32 | UIntKind::U64 | UIntKind::U128
         )
     }
 }
 
+/// Represents the expected generic parameters for the internal `CheckedRsOps` derive macro.
 pub struct GenericParams {
     uinteger_original: Option<syn::Ident>,
     uinteger: syn::GenericParam,
@@ -357,6 +592,7 @@ impl GenericParams {
         }
     }
 
+    /// Replace the `uinteger` generic parameter with a new one.
     pub fn with_uinteger_ident(&self, uinteger: syn::Ident) -> Self {
         let mut this = self.clone();
         this.uinteger_original = Some(self.uinteger_ident().clone());
@@ -364,10 +600,12 @@ impl GenericParams {
         this
     }
 
+    /// Get the current `uinteger` generic parameter.
     pub fn uinteger(&self) -> &syn::GenericParam {
         &self.uinteger
     }
 
+    /// Get the current `uinteger` generic parameter identifier.
     pub fn uinteger_ident(&self) -> &syn::Ident {
         match &self.uinteger {
             syn::GenericParam::Type(ty) => &ty.ident,
@@ -375,10 +613,12 @@ impl GenericParams {
         }
     }
 
+    /// Get the current `behavior` generic parameter.
     pub fn behavior(&self) -> &syn::GenericParam {
         &self.behavior
     }
 
+    /// Get the current `behavior` generic parameter identifier.
     pub fn behavior_ident(&self) -> &syn::Ident {
         match &self.behavior {
             syn::GenericParam::Type(ty) => &ty.ident,
@@ -386,10 +626,12 @@ impl GenericParams {
         }
     }
 
+    /// Get the current `lower` generic parameter.
     pub fn lower(&self) -> &syn::GenericParam {
         &self.lower
     }
 
+    /// Get the current `lower` generic parameter identifier.
     pub fn lower_ident(&self) -> &syn::Ident {
         match &self.lower {
             syn::GenericParam::Const(c) => &c.ident,
@@ -397,10 +639,12 @@ impl GenericParams {
         }
     }
 
+    /// Get the current `upper` generic parameter.
     pub fn upper(&self) -> &syn::GenericParam {
         &self.upper
     }
 
+    /// Get the current `upper` generic parameter identifier.
     pub fn upper_ident(&self) -> &syn::Ident {
         match &self.upper {
             syn::GenericParam::Const(c) => &c.ident,
@@ -408,6 +652,7 @@ impl GenericParams {
         }
     }
 
+    /// Get the current extra generic parameters. If the `uinteger` parameter was replaced, it will be updated recursively in the extras.
     pub fn extras(&self) -> Vec<syn::GenericParam> {
         if let Some(ident_uinteger) = self.uinteger_original.as_ref() {
             let alt_ident_uinteger = self.uinteger_ident();
@@ -450,6 +695,7 @@ impl GenericParams {
         }
     }
 
+    /// Get the current extra generic parameter identifiers.
     pub fn extra_idents(&self) -> Vec<syn::Ident> {
         self.extras()
             .into_iter()
@@ -461,6 +707,7 @@ impl GenericParams {
             .collect()
     }
 
+    /// Get the tokens for the `impl` generics, the type generics, and the `where` clause.
     pub fn split_for_impl(&self) -> (syn::Generics, syn::Generics, Option<syn::WhereClause>) {
         let uinteger_param = self.uinteger();
         let behavior_param = self.behavior();
