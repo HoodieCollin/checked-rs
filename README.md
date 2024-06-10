@@ -19,8 +19,8 @@ Behavior types are provide that configure the types to follow either panicking o
 
 ### Hard Clamp (Direct Interaction)
 ```rust
-use checked::HardClamp;
-use checked::behaviors::Saturating;
+use checked_rs::HardClamp;
+use checked_rs::behaviors::Saturating;
 
 let mut clamp = HardClamp::<u8, Saturating, 0, 10>::new(5)?;
 
@@ -41,8 +41,8 @@ assert_eq!(clamp.get(), 10);
 
 ### Hard Clamp Guard
 ```rust
-use checked::{HardClamp, GuardState};
-use checked::behaviors::Saturating;
+use checked_rs::{HardClamp, GuardState};
+use checked_rs::behaviors::Saturating;
 
 let mut clamp = HardClamp::<u8, Saturating, 0, 10>::new(5)?;
 
@@ -75,8 +75,8 @@ assert_eq!(clamp.get(), 10);
 
 ### Soft Clamp
 ```rust
-use checked::SoftClamp;
-use checked::behaviors::Saturating;
+use checked_rs::SoftClamp;
+use checked_rs::behaviors::Saturating;
 
 let mut clamp = SoftClamp::<u8, Saturating, 0, 10>::new(5);
 assert_eq!(*clamp, 5);
@@ -97,7 +97,7 @@ assert_eq!(clamp.is_valid(), false);
 
 ### View
 ```rust
-use checked::{View, Validator, Result};
+use checked_rs::{View, Validator, Result};
 
 struct CheckedIntValidator;
 
@@ -145,12 +145,12 @@ let item = match item.try_unwrap() {
     }
 };
 
-item.cancel();
+item.discard();
 ```
 
 ### `#[clamped(..)]` Attribute Macro
 ```rust
-use checked::clamped;
+use checked_rs::clamped;
 
 #[clamped(u8; default = 1; behavior = Panicking)]
 #[derive(Debug, Clone, Copy)]

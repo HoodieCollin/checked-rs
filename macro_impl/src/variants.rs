@@ -35,8 +35,8 @@ pub struct RangeVariant {
     pub half_open: bool,
 }
 
-#[derive(Debug)]
 pub struct Variants {
+    pub vis: syn::Visibility,
     pub name: syn::Ident,
     pub mod_name: syn::Ident,
     pub inner_name: syn::Ident,
@@ -58,9 +58,12 @@ impl Variants {
             }
         }
 
+        let vis = data.vis.clone();
         let name = data.ident.clone();
         let mod_name = format_ident!("clamped_{}", name.to_string().to_case(Case::Snake));
         let inner_name = format_ident!("{}UInt", name);
+
+        data.vis = parse_quote!(pub);
 
         let ty = &params.uinteger;
 
@@ -94,41 +97,55 @@ impl Variants {
                     "eq" => {
                         to_remove.push(i);
 
-                        if let Ok(val) = attr.parse_args::<UIntegerArg>() {
-                            let n;
+                        struct UIntegerList(pub Vec<UIntegerArg>);
 
-                            match val.base10_parse::<u128>() {
-                                Ok(num) => n = num,
-                                Err(e) => {
-                                    emit_error! {
-                                        val,
-                                        "The `#[eq]` attribute must be a single positive integer literal";
-                                        note = e;
+                        impl syn::parse::Parse for UIntegerList {
+                            fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+                                Ok(Self(
+                                    syn::punctuated::Punctuated::<UIntegerArg, syn::Token![,]>::parse_terminated(input)?
+                                    .into_iter()
+                                    .collect(),
+                                ))
+                            }
+                        }
+
+                        if let Ok(list) = attr.parse_args::<UIntegerList>() {
+                            for val in list.0 {
+                                let n;
+
+                                match val.base10_parse::<u128>() {
+                                    Ok(num) => n = num,
+                                    Err(e) => {
+                                        emit_error! {
+                                            val,
+                                            "The `#[eq]` attribute must be one or more positive integer literals";
+                                            note = e;
+                                        }
+
+                                        continue;
                                     }
-
-                                    continue;
                                 }
-                            }
 
-                            if let Some(prev) = exacts.insert(n, variant.ident.clone()) {
-                                emit_error! {
-                                    attr,
-                                    "The value `{}` is already used by variant `{}`",
-                                    n,
-                                    prev;
-                                    hint = prev.span() => "Conflicting variant here";
+                                if let Some(prev) = exacts.insert(n, variant.ident.clone()) {
+                                    emit_error! {
+                                        attr,
+                                        "The value `{}` is already used by variant `{}`",
+                                        n,
+                                        prev;
+                                        hint = prev.span() => "Conflicting variant here";
+                                    }
                                 }
+
+                                params.abort_if_out_of_bounds(attr, n);
+
+                                variant.fields = syn::Fields::Unnamed(parse_quote! {
+                                    (#inner_name<#ty>)
+                                });
                             }
-
-                            params.abort_if_out_of_bounds(attr, n);
-
-                            variant.fields = syn::Fields::Unnamed(parse_quote! {
-                                (#inner_name<#ty>)
-                            });
                         } else {
                             emit_error! {
                                 attr,
-                                "The `#[eq]` attribute must be a single integer literal"
+                                "The `#[eq]` attribute must be one or more integer literals"
                             }
                         }
                     }
@@ -256,6 +273,7 @@ impl Variants {
         };
 
         let this = Self {
+            vis,
             name,
             mod_name,
             inner_name,

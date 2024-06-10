@@ -4,6 +4,7 @@ use syn::{parse_quote, DeriveInput};
 
 use crate::params::GenericParams;
 
+#[doc(hidden)]
 pub fn derive_ops(input: DeriveInput) -> TokenStream {
     TokenStream::from_iter(vec![
         impl_default(&input),

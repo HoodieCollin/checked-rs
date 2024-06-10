@@ -1,23 +1,26 @@
 use anyhow::Result;
 
+use crate::guard::Guard;
+
 pub trait Validator: 'static + Copy {
     type Item;
-    fn validate(item: &Self::Item) -> Result<()>;
+    type Error;
+    fn validate(item: &Self::Item) -> Result<(), Self::Error>;
 }
 
 #[derive(
     Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
 #[repr(transparent)]
-pub struct View<T: 'static, U: Validator<Item = T>>(T, std::marker::PhantomData<U>);
+pub struct View<T: 'static, E, U: Validator<Item = T, Error = E>>(T, std::marker::PhantomData<U>);
 
-impl<T: std::fmt::Debug, U: Validator<Item = T>> std::fmt::Debug for View<T, U> {
+impl<T: std::fmt::Debug, E, U: Validator<Item = T, Error = E>> std::fmt::Debug for View<T, E, U> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("View").field(&self.0).finish()
     }
 }
 
-impl<T, U: Validator<Item = T>> std::ops::Deref for View<T, U> {
+impl<T, E, U: Validator<Item = T, Error = E>> std::ops::Deref for View<T, E, U> {
     type Target = T;
 
     #[inline(always)]
@@ -26,37 +29,14 @@ impl<T, U: Validator<Item = T>> std::ops::Deref for View<T, U> {
     }
 }
 
-impl<T, U: Validator<Item = T>> std::ops::DerefMut for View<T, U> {
-    #[inline(always)]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl<T, U: Validator<Item = T>> AsRef<T> for View<T, U> {
+impl<T, E, U: Validator<Item = T, Error = E>> AsRef<T> for View<T, E, U> {
     #[inline(always)]
     fn as_ref(&self) -> &T {
         &self.0
     }
 }
 
-impl<T, U: Validator<Item = T>> AsMut<T> for View<T, U> {
-    #[inline(always)]
-    fn as_mut(&mut self) -> &mut T {
-        &mut self.0
-    }
-}
-
-impl<T, U: Validator<Item = T>> Drop for View<T, U> {
-    fn drop(&mut self) {
-        #[cfg(debug_assertions)]
-        {
-            eprintln!("Modified was dropped without calling `commit()` or `cancel()` first!")
-        }
-    }
-}
-
-impl<T, U: Validator<Item = T>> View<T, U> {
+impl<T, E, U: Validator<Item = T, Error = E>> View<T, E, U> {
     #[inline(always)]
     pub fn new(item: T) -> Self {
         Self(item, std::marker::PhantomData)
@@ -68,38 +48,14 @@ impl<T, U: Validator<Item = T>> View<T, U> {
     }
 
     #[inline(always)]
-    pub fn unwrap(self) -> T {
-        let me = std::mem::ManuallyDrop::new(self);
-
-        match U::validate(&me.0) {
-            Ok(_) => unsafe { std::ptr::read(&me.0) },
-            Err(e) => panic!("{:?}", e),
-        }
+    pub fn into_inner(self) -> T {
+        self.0
     }
 
     #[inline(always)]
-    pub fn try_unwrap(self) -> Result<T, Self> {
-        let me = std::mem::ManuallyDrop::new(self);
-
-        match U::validate(&me.0) {
-            Ok(_) => Ok(unsafe { std::ptr::read(&me.0) }),
-            Err(_) => Err(std::mem::ManuallyDrop::into_inner(me)),
-        }
-    }
-
-    #[inline(always)]
-    pub fn is_valid(&self) -> bool {
-        U::validate(&self.0).is_ok()
-    }
-
-    #[inline(always)]
-    pub fn check(&self) -> Result<()> {
-        U::validate(&self.0)
-    }
-
-    #[inline(always)]
-    pub fn cancel(self) {
-        let _ = std::mem::ManuallyDrop::new(self);
+    #[must_use]
+    pub fn modify<'a>(&'a mut self) -> Guard<'a, T, E, U> {
+        Guard::new(&mut self.0)
     }
 }
 
@@ -108,12 +64,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_checked() -> Result<()> {
-        #[derive(Copy, Clone)]
-        struct CheckedIntValidator;
+    fn test_view() -> Result<()> {
+        #[derive(Clone, Copy)]
+        struct TestValidator;
 
-        impl Validator for CheckedIntValidator {
+        impl Validator for TestValidator {
             type Item = i32;
+            type Error = anyhow::Error;
 
             fn validate(item: &Self::Item) -> Result<()> {
                 if *item < 0 {
@@ -130,35 +87,38 @@ mod tests {
             }
         }
 
-        let mut item = View::with_validator(0, CheckedIntValidator);
+        let mut item = View::with_validator(0, TestValidator);
+        let mut g = item.modify();
 
-        assert_eq!(*item, 0);
-        assert!(item.is_valid());
+        *g = 1;
+        assert_eq!(*g, 1);
+        assert!(g.check().is_ok());
 
-        *item = 1;
-        assert_eq!(*item, 1);
-        assert!(item.check().is_ok());
+        *g = -1;
+        assert_eq!(*g, -1);
+        assert!(g.check().is_err());
 
-        *item = -1;
-        assert_eq!(*item, -1);
-        assert!(item.check().is_err());
+        *g = 12;
+        assert_eq!(*g, 12);
+        assert!(g.check().is_ok());
 
-        *item = 12;
-        assert_eq!(*item, 12);
-        assert!(item.check().is_ok());
+        *g = 7;
+        assert_eq!(*g, 7);
 
-        *item = 7;
-        assert_eq!(*item, 7);
-
-        let item = match item.try_unwrap() {
+        let mut g = match g.commit() {
             Ok(_) => panic!("Expected error"),
-            Err(item) => {
-                assert_eq!(*item, 7);
-                item
-            }
+            Err(g) => g,
         };
 
-        item.cancel();
+        // The guard's value should be unchanged if commit fails
+        assert_eq!(*g, 7);
+
+        *g = 100;
+        assert!(g.commit().is_ok());
+
+        // the guard is consumed by commit, so we can't check it again
+        // the `View`'s value should be updated
+        assert_eq!(&*item, &100);
 
         Ok(())
     }

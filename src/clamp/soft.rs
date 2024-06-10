@@ -1,7 +1,8 @@
 use rand::Rng;
 
 use crate::{
-    clamp::{guard::ClampGuard, ClampError},
+    clamp::{ClampError, ClampValidator},
+    guard::Guard,
     private, Behavior, UInteger,
 };
 
@@ -83,8 +84,8 @@ impl<T: UInteger, B: Behavior, const L: u128, const U: u128> SoftClamp<T, B, L, 
     }
 
     #[inline(always)]
-    pub fn modify<'a>(&'a mut self) -> ClampGuard<'a, T, B, L, U> {
-        ClampGuard::new(self.get_unchecked(), unsafe { self.get_mut_unchecked() })
+    pub fn modify<'a>(&'a mut self) -> Guard<'a, T, ClampError, ClampValidator<T, L, U>> {
+        Guard::new(&mut self.0)
     }
 }
 

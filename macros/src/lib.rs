@@ -1,9 +1,15 @@
+//! # checked-rs-macros
+//!
+//! > Procedural macros for the `checked-rs` crate. This crate should not be used directly.
+//! > Instead, you should use the `checked-rs` crate, which re-exports the public macros from this crate.
+//!
 extern crate proc_macro;
 
 use checked_rs_macro_impl::{clamped, ops};
 use proc_macro_error::proc_macro_error;
 use syn::parse_macro_input;
 
+#[doc(hidden)]
 #[proc_macro_derive(CheckedRsOps, attributes(derive_deref_mut))]
 #[proc_macro_error]
 pub fn derive_ops(input: proc_macro::TokenStream) -> proc_macro::TokenStream {

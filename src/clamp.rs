@@ -1,9 +1,23 @@
-use crate::{InherentBehavior, UInteger, UIntegerLimits};
+use crate::{view::Validator, InherentBehavior, UInteger, UIntegerLimits};
 use anyhow::Result;
 
-pub mod guard;
 pub mod hard;
 pub mod soft;
+
+pub use self::{hard::HardClamp, soft::SoftClamp};
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClampValidator<T: UInteger, const L: u128, const U: u128>(std::marker::PhantomData<T>);
+
+impl<T: UInteger, const L: u128, const U: u128> Validator for ClampValidator<T, L, U> {
+    type Item = T;
+    type Error = ClampError;
+
+    fn validate(item: &Self::Item) -> Result<(), Self::Error> {
+        crate::private::validate::<T, L, U>(*item)?;
+        Ok(())
+    }
+}
 
 pub trait EnumRepr<T: UInteger>:
     'static + Default + Eq + Ord + InherentBehavior + UIntegerLimits

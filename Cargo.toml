@@ -1,13 +1,22 @@
 [package]
-  description = "A library providing clamped unsigned integer symantic types and a general-purpose type that encodes a value and it's validator into a single type."
+  description = "A library for encoding validation semantics into the type system."
   edition     = "2021"
-  license     = "MIT OR Apache-2.0"
   name        = "checked-rs"
-  repository  = "https://github.com/HoodieCollin/checked-rs"
   version     = "0.1.0"
+  # 
+  authors.workspace    = true
+  exclude              = ["makefile"]
+  keywords             = ["checked", "clamp", "enum", "validation"]
+  license.workspace    = true
+  repository.workspace = true
 
 [workspace]
   members = ["macro_impl", "macros"]
+
+  [workspace.package]
+    authors    = ["HoodieCollin <collinkokotas@gmail.com>"]
+    license    = "MIT OR Apache-2.0"
+    repository = "https://github.com/HoodieCollin/checked-rs"
 
   [workspace.dependencies.quote]
     version = "1.0"
@@ -27,7 +36,8 @@
   version = "1.0"
 
 [dependencies.checked-rs-macros]
-  path = "macros"
+  path    = "macros"
+  version = "0.1"
 
 [dependencies.paste]
   version = "1.0"

@@ -4,8 +4,10 @@
     "Hasher",
     "idents",
     "Repr",
+    "struct",
     "thiserror",
-    "uinteger"
+    "uinteger",
+    "Uninit"
   ],
   "[rust]": {
     "editor.indentSize": "tabSize",

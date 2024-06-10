@@ -81,6 +81,34 @@ impl ToTokens for MinOrMax {
     }
 }
 
+/// Represents the `MIN` or `MAX` keyword.
+#[derive(Clone)]
+pub enum SemiOrComma {
+    Semi(syn::Token![;]),
+    Comma(syn::Token![,]),
+}
+
+impl Parse for SemiOrComma {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(syn::Token![;]) {
+            Ok(Self::Semi(input.parse()?))
+        } else if input.peek(syn::Token![,]) {
+            Ok(Self::Comma(input.parse()?))
+        } else {
+            Err(input.error("expected `;` or `,`"))
+        }
+    }
+}
+
+impl ToTokens for SemiOrComma {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::Semi(kw) => kw.to_tokens(tokens),
+            Self::Comma(kw) => kw.to_tokens(tokens),
+        }
+    }
+}
+
 /// Represents the unsigned integer argument. It can be a literal or a the MIN/MAX constant.
 #[derive(Clone)]
 pub enum UIntegerArg {
@@ -214,23 +242,23 @@ impl ToTokens for BehaviorArg {
 #[derive(Clone)]
 pub struct ClampParams {
     pub uinteger: syn::TypePath,
-    pub uinteger_semi: syn::Token![;],
+    pub uinteger_semi: SemiOrComma,
     pub default_kw: kw::default,
     pub default_eq: syn::Token![=],
     pub default_val: UIntegerArg,
-    pub default_semi: Option<syn::Token![;]>,
+    pub default_semi: Option<SemiOrComma>,
     pub behavior_kw: kw::behavior,
     pub behavior_eq: syn::Token![=],
     pub behavior_val: BehaviorArg,
-    pub behavior_semi: Option<syn::Token![;]>,
+    pub behavior_semi: Option<SemiOrComma>,
     pub lower_kw: Option<kw::lower>,
     pub lower_eq: Option<syn::Token![=]>,
     pub lower_val: Option<UIntegerArg>,
-    pub lower_semi: Option<syn::Token![;]>,
+    pub lower_semi: Option<SemiOrComma>,
     pub upper_kw: Option<kw::upper>,
     pub upper_eq: Option<syn::Token![=]>,
     pub upper_val: Option<UIntegerArg>,
-    pub upper_semi: Option<syn::Token![;]>,
+    pub upper_semi: Option<SemiOrComma>,
 }
 
 impl Parse for ClampParams {
@@ -268,7 +296,7 @@ impl Parse for ClampParams {
                 default_eq = Some(input.parse::<syn::Token![=]>()?);
                 default_val = Some(input.parse::<UIntegerArg>()?);
                 if !input.is_empty() {
-                    default_semi = Some(input.parse::<syn::Token![;]>()?);
+                    default_semi = Some(input.parse::<SemiOrComma>()?);
                     found_semi = true;
                 }
             } else if input.peek(kw::behavior) {
@@ -280,7 +308,7 @@ impl Parse for ClampParams {
                 behavior_eq = Some(input.parse::<syn::Token![=]>()?);
                 behavior_val = Some(input.parse::<BehaviorArg>()?);
                 if !input.is_empty() {
-                    behavior_semi = Some(input.parse::<syn::Token![;]>()?);
+                    behavior_semi = Some(input.parse::<SemiOrComma>()?);
                     found_semi = true;
                 }
             } else if input.peek(kw::lower) {
@@ -292,7 +320,7 @@ impl Parse for ClampParams {
                 lower_eq = Some(input.parse::<syn::Token![=]>()?);
                 lower_val = Some(input.parse::<UIntegerArg>()?);
                 if !input.is_empty() {
-                    lower_semi = Some(input.parse::<syn::Token![;]>()?);
+                    lower_semi = Some(input.parse::<SemiOrComma>()?);
                     found_semi = true;
                 }
             } else if input.peek(kw::upper) {
@@ -304,7 +332,7 @@ impl Parse for ClampParams {
                 upper_eq = Some(input.parse::<syn::Token![=]>()?);
                 upper_val = Some(input.parse::<UIntegerArg>()?);
                 if !input.is_empty() {
-                    upper_semi = Some(input.parse::<syn::Token![;]>()?);
+                    upper_semi = Some(input.parse::<SemiOrComma>()?);
                     found_semi = true;
                 }
             }

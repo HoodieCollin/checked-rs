@@ -1,7 +1,8 @@
 use rand::Rng;
 
 use crate::{
-    clamp::{guard::ClampGuard, ClampError},
+    clamp::{ClampError, ClampValidator},
+    guard::Guard,
     private, Behavior, UInteger,
 };
 
@@ -106,8 +107,8 @@ impl<T: UInteger, B: Behavior, const L: u128, const U: u128> HardClamp<T, B, L, 
     }
 
     #[inline(always)]
-    pub fn modify<'a>(&'a mut self) -> ClampGuard<'a, T, B, L, U> {
-        ClampGuard::new(self.get(), unsafe { self.get_mut_unchecked() })
+    pub fn modify<'a>(&'a mut self) -> Guard<'a, T, ClampError, ClampValidator<T, L, U>> {
+        Guard::new(&mut self.0)
     }
 }
 
@@ -115,7 +116,10 @@ impl<T: UInteger, B: Behavior, const L: u128, const U: u128> HardClamp<T, B, L, 
 mod tests {
     use anyhow::Result;
 
-    use crate::clamp::{guard::GuardState, hard::HardClamp, Saturating};
+    use crate::{
+        clamp::{hard::HardClamp, Saturating},
+        commit_or_bail,
+    };
 
     #[test]
     fn test_arithmetic() -> Result<()> {
@@ -155,30 +159,30 @@ mod tests {
     }
 
     #[test]
-    fn test_strict_clamp_guard() -> Result<()> {
+    fn test_clamp_guard() -> Result<()> {
         let mut clamp = HardClamp::<u8, Saturating, 0, 10>::new(5)?;
 
         assert_eq!(clamp.get(), 5);
 
         let mut g = clamp.modify();
 
-        assert_eq!(g.check(), GuardState::Unchanged);
+        assert_eq!(g.is_changed(), false);
 
         *g = 10;
 
-        assert_eq!(g.check(), GuardState::Changed);
+        assert_eq!(g.is_changed(), true);
 
-        g.commit()?;
+        commit_or_bail!(g);
 
         assert_eq!(clamp.get(), 10);
 
         let mut g = clamp.modify();
 
-        assert_eq!(g.check(), GuardState::Unchanged);
+        assert_eq!(g.is_changed(), false);
 
         *g = 15;
 
-        assert_eq!(g.check(), GuardState::Changed);
+        assert_eq!(g.is_changed(), true);
 
         assert!(g.commit().is_err());
 
