@@ -316,7 +316,7 @@ impl crate::Behavior for Saturating {
 
 #[cfg(test)]
 mod tests {
-    use checked_rs_derive::clamped;
+    use checked_rs_macros::clamped;
 
     use super::*;
     use crate::prelude::*;

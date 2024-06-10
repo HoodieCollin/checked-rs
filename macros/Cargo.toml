@@ -1,6 +1,6 @@
 [package]
   edition = "2021"
-  name    = "checked-rs-derive"
+  name    = "checked-rs-macros"
   publish = false
   version = "0.1.0"
 
@@ -20,5 +20,5 @@
 [dependencies.proc-macro-error]
   version = "1.0"
 
-[dependencies.checked-rs-derive-impl]
-  path = "../derive_impl"
+[dependencies.checked-rs-macro-impl]
+  path = "../macro_impl"

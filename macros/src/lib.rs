@@ -1,6 +1,6 @@
 extern crate proc_macro;
 
-use checked_rs_derive_impl::{clamped, ops};
+use checked_rs_macro_impl::{clamped, ops};
 use proc_macro_error::proc_macro_error;
 use syn::parse_macro_input;
 

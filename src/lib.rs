@@ -12,7 +12,7 @@ pub mod prelude {
     pub use crate::reexports::*;
     pub use crate::view::*;
     pub use crate::{Behavior, InherentBehavior, UInteger, UIntegerLimits};
-    pub use checked_rs_derive::clamped;
+    pub use checked_rs_macros::clamped;
 }
 
 mod private {

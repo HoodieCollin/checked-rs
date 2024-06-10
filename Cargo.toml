@@ -1,10 +1,13 @@
 [package]
-  edition = "2021"
-  name    = "checked-rs"
-  version = "0.1.0"
+  description = "A library providing clamped unsigned integer symantic types and a general-purpose type that encodes a value and it's validator into a single type."
+  edition     = "2021"
+  license     = "MIT OR Apache-2.0"
+  name        = "checked-rs"
+  repository  = "https://github.com/HoodieCollin/checked-rs"
+  version     = "0.1.0"
 
 [workspace]
-  members = ["macros/derive", "macros/derive_impl"]
+  members = ["macro_impl", "macros"]
 
   [workspace.dependencies.quote]
     version = "1.0"
@@ -23,8 +26,8 @@
 [dependencies.anyhow]
   version = "1.0"
 
-[dependencies.checked-rs-derive]
-  path = "macros/derive"
+[dependencies.checked-rs-macros]
+  path = "macros"
 
 [dependencies.paste]
   version = "1.0"

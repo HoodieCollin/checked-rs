@@ -5,7 +5,7 @@ use crate::{
     private, Behavior, UInteger,
 };
 
-#[derive(Debug, Clone, Copy, checked_rs_derive::CheckedRsOps)]
+#[derive(Debug, Clone, Copy, checked_rs_macros::CheckedRsOps)]
 #[repr(transparent)]
 pub struct HardClamp<T: UInteger, B: Behavior, const L: u128, const U: u128>(
     pub(crate) T,

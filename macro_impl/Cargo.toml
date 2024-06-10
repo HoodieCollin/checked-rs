@@ -1,6 +1,6 @@
 [package]
   edition = "2021"
-  name    = "checked-rs-derive-impl"
+  name    = "checked-rs-macro-impl"
   publish = false
   version = "0.1.0"
 
