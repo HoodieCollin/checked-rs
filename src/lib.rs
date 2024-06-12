@@ -166,6 +166,8 @@ pub mod view;
 mod reexports {
     #[doc(hidden)]
     pub use anyhow::*;
+    #[doc(hidden)]
+    pub use serde;
 }
 
 pub mod prelude {

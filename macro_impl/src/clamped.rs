@@ -60,7 +60,7 @@ pub fn clamped(attr: ClampParams, mut item: syn::Item) -> TokenStream {
         mod #mod_name {
             use super::*;
 
-            #[derive(Clone, Copy)]
+            #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
             pub struct #inner_name<T>(pub(self) T);
 
             impl<T> std::fmt::Debug for #inner_name<T>
