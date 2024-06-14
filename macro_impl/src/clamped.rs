@@ -496,6 +496,16 @@ fn impl_conversions(name: &syn::Ident, attr: &ClampParams) -> TokenStream {
                 Self::from_uint(val as #uinteger).expect("value should be within bounds")
             }
         }
+
+        impl std::str::FromStr for #name {
+            type Err = ::anyhow::Error;
+
+            #[inline(always)]
+            fn from_str(s: &str) -> ::anyhow::Result<Self> {
+                let n = s.parse::<#uinteger>()?;
+                Self::from_uint(n)
+            }
+        }
     }
 }
 

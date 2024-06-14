@@ -371,4 +371,11 @@ mod tests {
         assert!(g.commit().is_ok());
         assert!(code.is_unknown());
     }
+
+    #[test]
+    fn test_from_str() -> Result<()> {
+        let code: ResponseCode = "200".parse()?;
+        assert!(code.is_success());
+        Ok(())
+    }
 }
