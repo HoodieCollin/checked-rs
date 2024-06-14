@@ -250,7 +250,7 @@ mod private {
     }
 }
 
-pub trait UIntegerLimits {
+pub trait UIntegerLimits: 'static {
     const MIN: u128;
     const MAX: u128;
 }
@@ -308,7 +308,7 @@ macro_rules! impl_unsigned {
 
 impl_unsigned!(u8, u16, u32, u64, u128);
 
-pub trait Behavior: Copy {
+pub trait Behavior: Copy + 'static {
     fn add<T: UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T;
     fn sub<T: UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T;
     fn mul<T: UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T;
@@ -321,7 +321,7 @@ pub trait Behavior: Copy {
     fn shr<T: UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T;
 }
 
-pub trait InherentBehavior {
+pub trait InherentBehavior: 'static {
     type Behavior: Behavior;
 }
 
