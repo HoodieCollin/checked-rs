@@ -37,7 +37,7 @@
 
 [dependencies.checked-rs-macros]
   path    = "macros"
-  version = "0.2"
+  version = "0"
 
 [dependencies.paste]
   version = "1.0"

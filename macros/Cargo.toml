@@ -26,4 +26,4 @@
 
 [dependencies.checked-rs-macro-impl]
   path    = "../macro_impl"
-  version = "0.2"
+  version = "0"
