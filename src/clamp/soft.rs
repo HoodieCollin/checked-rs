@@ -6,7 +6,7 @@ use crate::{
     private, Behavior, UInteger,
 };
 
-#[derive(Debug, Clone, Copy, checked_rs_macros::CheckedRsOps)]
+#[derive(Debug, Clone, Copy, checked_rs_macros::CheckedRsOps, Hash)]
 #[derive_deref_mut]
 #[repr(transparent)]
 pub struct SoftClamp<T: UInteger, B: Behavior, const L: u128, const U: u128>(
