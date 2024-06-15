@@ -38,7 +38,7 @@ pub enum ClampError {
     TooLarge { val: u128, max: u128 },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Panicking {}
 
 impl crate::Behavior for Panicking {
@@ -183,7 +183,7 @@ impl crate::Behavior for Panicking {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Saturating {}
 
 impl crate::Behavior for Saturating {
