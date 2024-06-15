@@ -1,10 +1,16 @@
 
-.PHONY: publish publish-macros publish-macro-impl bump-patch bump-minor bump-major check-dirty
+.PHONY: release-patch release-minor release-major publish-all publish-macros publish-macro-impl bump-patch bump-minor bump-major check-dirty
 
 # Command to count the number of changes
 CHECK_DIRTY_CMD = expr $(shell git status --porcelain 2>/dev/null | egrep "^(M| M)" | wc -l)
 
-publish: publish-macros
+release-patch: bump-patch publish-all
+
+release-minor: bump-minor publish-all
+
+release-major: bump-major publish-all
+
+publish-all: publish-macros
 	cargo publish -p checked-rs
 
 publish-macros: publish-macro-impl
