@@ -2,7 +2,7 @@
   description = "Implementation of the procedural macros for checked-rs. This crate is not intended to be used directly."
   edition     = "2021"
   name        = "checked-rs-macro-impl"
-  version     = "0.5.0"
+  version     = "0.6.0"
   # 
   authors.workspace    = true
   license.workspace    = true
