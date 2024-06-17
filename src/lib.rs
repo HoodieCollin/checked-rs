@@ -19,7 +19,7 @@
 //!
 //! The macro accepts the following arguments _(in any order)_:
 //! - `behavior`: The behavior to use when the value overflows the limits. The default behavior is `Panicking`.
-//! - `default`: The default value to use when the value is not provided. The default default value is the minimum value.
+//! - `default`: The default value to use when the value is not provided. The default default value is zero _(if possible)_ or the minimum value.
 //! - `lower`: The lower limit of the clamped value. The default lower limit is the minimum value of the integer type.
 //! - `upper`: The upper limit of the clamped value. The default upper limit is the maximum value of the integer type.
 //!
@@ -54,11 +54,27 @@
 //! Additionally, they will have the following extra standard traits implemented:
 //! - `DerefMut`, `AsMut`
 //!
+//! ```ignore
+//! use checked_rs::prelude::*;
+//!
+//! #[clamped(i32, lower = -100_000, upper = 100_000)]
+//! #[derive(Debug, Clone, Copy, Hash)]
+//! struct Scale;
+//! ```
+//!
 //! #### Hard Clamps
 //!
 //! Hard clamps are clamped types that **_DO_** enforce the limits on the value. The value is clamped when it is created and any operations that would cause the value to overflow the limits will be handled according to the specified behavior.
 //!
 //! > **UNSAFE NOTE**: The `set_unchecked` and `as_mut` methods are available but marked unsafe because they can be used to assign an out-of-bounds value.
+//!
+//! ```ignore
+//! use checked_rs::prelude::*;
+//!
+//! #[clamped(usize, default = 1_000, upper = 100_000_000)]
+//! #[derive(Debug, Clone, Copy, Hash)]
+//! struct Available;
+//! ```
 //!
 //! ### Enum Usage
 //!
@@ -66,8 +82,6 @@
 //!
 //! > **NOTE**: The enum must account for all possible values within the clamped range. This can be done by using the `#[eq]` and `#[range]` attributes on the variants.
 //! > The `#[other]` attribute can be used to account for any values that are not explicitly handled.
-//!
-//! #### Example
 //!
 //! ```ignore
 //! use checked_rs::prelude::*;
