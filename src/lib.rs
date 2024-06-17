@@ -15,13 +15,13 @@
 //! > For the remainder of these docs, `int` will be used to refer to the integer type used for the clamped value.
 //!
 //! The macro requires the following positional arguments:
-//! - `integer`: The integer type to use for the clamped value.
+//! - `int`: The integer type to use for the clamped value.
 //!
 //! The macro accepts the following arguments _(in any order)_:
 //! - `behavior`: The behavior to use when the value overflows the limits. The default behavior is `Panicking`.
 //! - `default`: The default value to use when the value is not provided. The default default value is zero _(if possible)_ or the minimum value.
-//! - `lower`: The lower limit of the clamped value. The default lower limit is the minimum value of the integer type.
-//! - `upper`: The upper limit of the clamped value. The default upper limit is the maximum value of the integer type.
+//! - `lower`: The lower limit of the clamped value. The default lower limit is the minimum value of `int`.
+//! - `upper`: The upper limit of the clamped value. The default upper limit is the maximum value of `int`.
 //!
 //! The transformed type will have the following inherent implementations:
 //! - `new(value: int) -> Self`: A constructor that creates a new clamped value from the provided value.
@@ -32,13 +32,13 @@
 //! The transformed type will have the following custom traits implemented:
 //! - `InherentLimits<int>`: A trait that defines the minimum and maximum values of the clamped range.
 //! - `InherentBehavior`: A trait that defines the behavior to use when the value overflows the limits.
-//! - `ClampedInteger<int>`: A trait that defines the methods for converting to and from the underlying integer type.
+//! - `ClampedInteger<int>`: A trait that defines the methods for converting to and from `int`.
 //!
 //! The transformed type will have the following standard traits implemented:
 //! - `Default`, `Deref`, `AsRef`, `FromStr`, `PartialEq`, `PartialOrd`, `Eq`, `Ord`, `Add`, `AddAssign`, `Sub`, `SubAssign`, `Mul`, `MulAssign`, `Div`, `DivAssign`, `Rem`, `RemAssign`, `Neg`, `Not`, `BitAnd`, `BitAndAssign`, `BitOr`, `BitOrAssign`, `BitXor`, `BitXorAssign`.
-//! - `From` implementations are provided to support conversions for the same machine integer types as the underlying integer type.
+//! - `From` implementations are provided to support conversions for the same machine integer types as `int`.
 //!
-//! > **NOTE**: The `std::cmp` and `std::ops` traits support `rhs` values of the clamped type or the underlying integer type.
+//! > **NOTE**: The `std::cmp` and `std::ops` traits support `rhs` values of the clamped type or `int`.
 //!
 //! The transformed type will have the following external traits implemented:
 //! - `serde::Serialize`, `serde::Deserialize`
