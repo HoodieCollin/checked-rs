@@ -4,8 +4,7 @@
 //!
 pub mod clamped;
 
-#[doc(hidden)]
-pub mod ops;
+// #[doc(hidden)]
+// pub mod ops;
 
-mod params;
-mod variants;
+pub mod params;

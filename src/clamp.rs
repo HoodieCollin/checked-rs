@@ -1,185 +1,220 @@
-use crate::{view::Validator, InherentBehavior, UInteger, UIntegerLimits};
+use std::{
+    num,
+    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Sub},
+};
+
+use crate::{InherentBehavior, InherentLimits};
 use anyhow::Result;
 
-pub mod hard;
-pub mod soft;
-
-pub use self::{hard::HardClamp, soft::SoftClamp};
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ClampValidator<T: UInteger, const L: u128, const U: u128>(std::marker::PhantomData<T>);
-
-impl<T: UInteger, const L: u128, const U: u128> Validator for ClampValidator<T, L, U> {
-    type Item = T;
-    type Error = ClampError;
-
-    fn validate(item: &Self::Item) -> Result<(), Self::Error> {
-        crate::private::validate::<T, L, U>(*item)?;
-        Ok(())
-    }
-}
-
-pub trait EnumRepr<T: UInteger>:
-    'static + Default + Eq + Ord + InherentBehavior + UIntegerLimits
+pub unsafe trait ClampedInteger<T: Copy>:
+    'static + Default + Eq + Ord + InherentLimits<T>
 {
-    fn from_uint(value: T) -> Result<Self>;
-    fn as_uint(&self) -> &T;
+    fn from_primitive(value: T) -> Result<Self>;
+    fn as_primitive(&self) -> &T;
 
-    fn into_uint(&self) -> T {
-        *self.as_uint()
+    fn into_primitive(&self) -> T {
+        *self.as_primitive()
     }
 }
+
+pub unsafe trait SoftClamp<T: Copy>: ClampedInteger<T> + InherentBehavior {}
+
+pub unsafe trait HardClamp<T: Copy>: ClampedInteger<T> + InherentBehavior {}
+
+pub unsafe trait ClampedEnum<T: Copy>: ClampedInteger<T> + InherentBehavior {}
 
 #[derive(Debug, Clone, Copy, thiserror::Error)]
-pub enum ClampError {
+pub enum ClampError<T: Copy> {
     #[error("Value too small: {val} (min: {min})")]
-    TooSmall { val: u128, min: u128 },
+    TooSmall { val: T, min: T },
     #[error("Value too large: {val} (max: {max})")]
-    TooLarge { val: u128, max: u128 },
+    TooLarge { val: T, max: T },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Panicking {}
 
 impl crate::Behavior for Panicking {
-    fn add<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
+    fn add<T: Add<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Add<Output = num::Saturating<T>>,
+    {
         let val = lhs + rhs;
-        if (val) > max {
+        if val > max {
             panic!("Addition overflow");
         }
-        if (val) < min {
+        if val < min {
             panic!("Addition underflow");
         }
-        T::from_u128(val)
+        val
     }
 
-    fn sub<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
+    fn sub<T: Sub<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Sub<Output = num::Saturating<T>>,
+    {
         let val = lhs - rhs;
-        if (val) > max {
+        if val > max {
             panic!("Subtraction overflow");
         }
-        if (val) < min {
+        if val < min {
             panic!("Subtraction underflow");
         }
-        T::from_u128(val)
+        val
     }
 
-    fn mul<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
+    fn mul<T: Mul<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Mul<Output = num::Saturating<T>>,
+    {
         let val = lhs * rhs;
-        if (val) > max {
+        if val > max {
             panic!("Multiplication overflow");
         }
-        if (val) < min {
+        if val < min {
             panic!("Multiplication underflow");
         }
-        T::from_u128(val)
+        val
     }
 
-    fn div<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
+    fn div<T: Div<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Div<Output = num::Saturating<T>>,
+    {
         let val = lhs / rhs;
-        if (val) > max {
+        if val > max {
             panic!("Division overflow");
         }
-        if (val) < min {
+        if val < min {
             panic!("Division underflow");
         }
-        T::from_u128(val)
+        val
     }
 
-    fn rem<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
+    fn rem<T: Rem<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Rem<Output = num::Saturating<T>>,
+    {
         let val = lhs % rhs;
-        if (val) > max {
+        if val > max {
             panic!("Remainder overflow");
         }
-        if (val) < min {
+        if val < min {
             panic!("Remainder underflow");
         }
-        T::from_u128(val)
+        val
     }
 
-    fn bitand<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
+    fn bitand<T: BitAnd<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: BitAnd<Output = num::Saturating<T>>,
+    {
         let val = lhs & rhs;
-        if (val) > max {
+        if val > max {
             panic!("Bitwise AND overflow");
         }
-        if (val) < min {
+        if val < min {
             panic!("Bitwise AND underflow");
         }
-        T::from_u128(val)
+        val
     }
 
-    fn bitor<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
+    fn bitor<T: BitOr<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: BitOr<Output = num::Saturating<T>>,
+    {
         let val = lhs | rhs;
-        if (val) > max {
+        if val > max {
             panic!("Bitwise OR overflow");
         }
-        if (val) < min {
+        if val < min {
             panic!("Bitwise OR underflow");
         }
-        T::from_u128(val)
+        val
     }
 
-    fn bitxor<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
+    fn bitxor<T: BitXor<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: BitXor<Output = num::Saturating<T>>,
+    {
         let val = lhs ^ rhs;
-        if (val) > max {
+        if val > max {
             panic!("Bitwise XOR overflow");
         }
-        if (val) < min {
+        if val < min {
             panic!("Bitwise XOR underflow");
         }
-        T::from_u128(val)
+        val
     }
 
-    fn shl<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
+    // fn shl<T: Shl<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    // where
+    //     T::Output: Eq + Ord,
+    //     num::Saturating<T>: Shl<Output = num::Saturating<T>>,
+    // {
+    //     let val = lhs << rhs;
+    //     if val > max {
+    //         panic!("Bitwise shift left overflow");
+    //     }
+    //     if val < min {
+    //         panic!("Bitwise shift left underflow");
+    //     }
+    //     val
+    // }
 
-        let val = lhs << rhs;
-        if (val) > max {
-            panic!("Bitwise shift left overflow");
+    // fn shr<T: Shr<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    // where
+    //     T::Output: Eq + Ord,
+    //     num::Saturating<T>: Shr<Output = num::Saturating<T>>,
+    // {
+    //     let val = lhs >> rhs;
+    //     if val > max {
+    //         panic!("Bitwise shift right overflow");
+    //     }
+    //     if val < min {
+    //         panic!("Bitwise shift right underflow");
+    //     }
+    //     val
+    // }
+
+    fn neg<T: std::ops::Neg<Output = T>>(value: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: std::ops::Neg<Output = num::Saturating<T>>,
+    {
+        let val = -value;
+
+        if val > max {
+            panic!("Negation overflow");
         }
-        if (val) < min {
-            panic!("Bitwise shift left underflow");
+        if val < min {
+            panic!("Negation underflow");
         }
-        T::from_u128(val)
+        val
     }
 
-    fn shr<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
+    fn not<T: std::ops::Not<Output = T>>(value: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: std::ops::Not<Output = num::Saturating<T>>,
+    {
+        let val = !value;
 
-        let val = lhs >> rhs;
-        if (val) > max {
-            panic!("Bitwise shift right overflow");
+        if val > max {
+            panic!("Bitwise NOT overflow");
         }
-        if (val) < min {
-            panic!("Bitwise shift right underflow");
+        if val < min {
+            panic!("Bitwise NOT underflow");
         }
-        T::from_u128(val)
+        val
     }
 }
 
@@ -187,144 +222,208 @@ impl crate::Behavior for Panicking {
 pub enum Saturating {}
 
 impl crate::Behavior for Saturating {
-    fn add<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
-        let val = lhs.saturating_add(rhs);
-        T::from_u128(if (val) > max {
+    fn add<T: Add<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Add<Output = num::Saturating<T>>,
+    {
+        let lhs = num::Saturating(lhs);
+        let rhs = num::Saturating(rhs);
+        let num::Saturating(val) = lhs + rhs;
+        if val > max {
             max
-        } else if (val) < min {
+        } else if val < min {
             min
         } else {
             val
-        })
+        }
     }
 
-    fn sub<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
-        let val = lhs.saturating_sub(rhs);
-        T::from_u128(if (val) > max {
+    fn sub<T: Sub<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Sub<Output = num::Saturating<T>>,
+    {
+        let lhs = num::Saturating(lhs);
+        let rhs = num::Saturating(rhs);
+        let num::Saturating(val) = lhs - rhs;
+        if val > max {
             max
-        } else if (val) < min {
+        } else if val < min {
             min
         } else {
             val
-        })
+        }
     }
 
-    fn mul<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
-        let val = lhs.saturating_mul(rhs);
-        T::from_u128(if (val) > max {
+    fn mul<T: Mul<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Mul<Output = num::Saturating<T>>,
+    {
+        let lhs = num::Saturating(lhs);
+        let rhs = num::Saturating(rhs);
+        let num::Saturating(val) = lhs * rhs;
+        if val > max {
             max
-        } else if (val) < min {
+        } else if val < min {
             min
         } else {
             val
-        })
+        }
     }
 
-    fn div<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
-        let val = lhs.saturating_div(rhs);
-        T::from_u128(if (val) > max {
+    fn div<T: Div<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Div<Output = num::Saturating<T>>,
+    {
+        let lhs = num::Saturating(lhs);
+        let rhs = num::Saturating(rhs);
+        let num::Saturating(val) = lhs / rhs;
+        if val > max {
             max
-        } else if (val) < min {
+        } else if val < min {
             min
         } else {
             val
-        })
+        }
     }
 
-    fn rem<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
-        let val = lhs % rhs;
-        T::from_u128(if (val) > max {
+    fn rem<T: Rem<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Rem<Output = num::Saturating<T>>,
+    {
+        let lhs = num::Saturating(lhs);
+        let rhs = num::Saturating(rhs);
+        let num::Saturating(val) = lhs % rhs;
+        if val > max {
             max
-        } else if (val) < min {
+        } else if val < min {
             min
         } else {
             val
-        })
+        }
     }
 
-    fn bitand<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
-        let val = lhs & rhs;
-        T::from_u128(if (val) > max {
+    fn bitand<T: BitAnd<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: BitAnd<Output = num::Saturating<T>>,
+    {
+        let lhs = num::Saturating(lhs);
+        let rhs = num::Saturating(rhs);
+        let num::Saturating(val) = lhs & rhs;
+        if val > max {
             max
-        } else if (val) < min {
+        } else if val < min {
             min
         } else {
             val
-        })
+        }
     }
 
-    fn bitor<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
-        let val = lhs | rhs;
-        T::from_u128(if (val) > max {
+    fn bitor<T: BitOr<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: BitOr<Output = num::Saturating<T>>,
+    {
+        let lhs = num::Saturating(lhs);
+        let rhs = num::Saturating(rhs);
+        let num::Saturating(val) = lhs | rhs;
+        if val > max {
             max
-        } else if (val) < min {
+        } else if val < min {
             min
         } else {
             val
-        })
+        }
     }
 
-    fn bitxor<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
-
-        let val = lhs ^ rhs;
-        T::from_u128(if (val) > max {
+    fn bitxor<T: BitXor<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: BitXor<Output = num::Saturating<T>>,
+    {
+        let lhs = num::Saturating(lhs);
+        let rhs = num::Saturating(rhs);
+        let num::Saturating(val) = lhs ^ rhs;
+        if val > max {
             max
-        } else if (val) < min {
+        } else if val < min {
             min
         } else {
             val
-        })
+        }
     }
 
-    fn shl<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
+    // fn shl<T: Shl<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    // where
+    //     T::Output: Eq + Ord,
+    //     num::Saturating<T>: Shl<Output = num::Saturating<T>>,
+    // {
+    //     let lhs = num::Saturating(lhs);
+    //     let rhs = num::Saturating(rhs);
+    //     let num::Saturating(val) = lhs << rhs;
+    //     if val > max {
+    //         max
+    //     } else if val < min {
+    //         min
+    //     } else {
+    //         val
+    //     }
+    // }
 
-        let val = lhs << rhs;
-        T::from_u128(if (val) > max {
+    // fn shr<T: Shr<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    // where
+    //     T::Output: Eq + Ord,
+    //     num::Saturating<T>: Shr<Output = num::Saturating<T>>,
+    // {
+    //     let lhs = num::Saturating(lhs);
+    //     let rhs = num::Saturating(rhs);
+    //     let num::Saturating(val) = lhs >> rhs;
+    //     if val > max {
+    //         max
+    //     } else if val < min {
+    //         min
+    //     } else {
+    //         val
+    //     }
+    // }
+
+    fn neg<T: std::ops::Neg<Output = T>>(value: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: std::ops::Neg<Output = num::Saturating<T>>,
+    {
+        let value = num::Saturating(value);
+        let num::Saturating(val) = -value;
+
+        if val > max {
             max
-        } else if (val) < min {
+        } else if val < min {
             min
         } else {
             val
-        })
+        }
     }
 
-    fn shr<T: crate::UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T {
-        let lhs = lhs.into_u128();
-        let rhs = rhs.into_u128();
+    fn not<T: std::ops::Not<Output = T>>(value: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: std::ops::Not<Output = num::Saturating<T>>,
+    {
+        let value = num::Saturating(value);
+        let num::Saturating(val) = !value;
 
-        let val = lhs >> rhs;
-        T::from_u128(if (val) > max {
+        if val > max {
             max
-        } else if (val) < min {
+        } else if val < min {
             min
         } else {
             val
-        })
+        }
     }
 }
 

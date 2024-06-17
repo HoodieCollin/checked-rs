@@ -5,12 +5,14 @@ use proc_macro_error::{abort, emit_error};
 use quote::format_ident;
 use syn::parse_quote;
 
-use crate::params::{ClampParams, UIntegerArg};
+use crate::params::{NumberArg, NumberKind};
+
+use super::{attr_params::AttrParams, NumberValue};
 
 #[derive(Debug)]
 pub struct ExactVariant {
     pub ident: syn::Ident,
-    pub value: u128,
+    pub value: NumberValue,
 }
 
 impl PartialEq for ExactVariant {
@@ -30,8 +32,8 @@ impl std::hash::Hash for ExactVariant {
 #[derive(Debug)]
 pub struct RangeVariant {
     pub ident: syn::Ident,
-    pub start: Option<u128>,
-    pub end: Option<u128>,
+    pub start: Option<NumberValue>,
+    pub end: Option<NumberValue>,
     pub half_open: bool,
 }
 
@@ -39,14 +41,14 @@ pub struct Variants {
     pub vis: syn::Visibility,
     pub name: syn::Ident,
     pub mod_name: syn::Ident,
-    pub inner_name: syn::Ident,
+    pub value_name: syn::Ident,
     pub exacts: HashSet<ExactVariant>,
     pub ranges: Vec<RangeVariant>,
     pub catchall: Option<syn::Ident>,
 }
 
 impl Variants {
-    pub fn from_item(params: &ClampParams, item: &mut syn::Item) -> Self {
+    pub fn from_item(params: &AttrParams, item: &mut syn::Item) -> Self {
         let data;
 
         if let syn::Item::Enum(d) = item {
@@ -54,18 +56,25 @@ impl Variants {
         } else {
             abort! {
                 item,
-                "Can only derive `Specific` for enums"
+                "Can only be applied `Specific` for enums"
+            }
+        }
+
+        if params.as_soft_or_hard.is_some() {
+            abort! {
+                item,
+                "The `as Soft` and `as Hard` parameters are not allowed on enums"
             }
         }
 
         let vis = data.vis.clone();
         let name = data.ident.clone();
         let mod_name = format_ident!("clamped_{}", name.to_string().to_case(Case::Snake));
-        let inner_name = format_ident!("{}UInt", name);
+        let value_name = format_ident!("{}Value", name);
 
         data.vis = parse_quote!(pub);
 
-        let ty = &params.uinteger;
+        let ty = &params.integer;
 
         let mut exacts = HashMap::new();
         let mut ranges = Vec::new();
@@ -97,34 +106,21 @@ impl Variants {
                     "eq" => {
                         to_remove.push(i);
 
-                        struct UIntegerList(pub Vec<UIntegerArg>);
+                        struct NumberArgList(pub Vec<NumberArg>);
 
-                        impl syn::parse::Parse for UIntegerList {
+                        impl syn::parse::Parse for NumberArgList {
                             fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
                                 Ok(Self(
-                                    syn::punctuated::Punctuated::<UIntegerArg, syn::Token![,]>::parse_terminated(input)?
+                                    syn::punctuated::Punctuated::<NumberArg, syn::Token![,]>::parse_terminated(input)?
                                     .into_iter()
                                     .collect(),
                                 ))
                             }
                         }
 
-                        if let Ok(list) = attr.parse_args::<UIntegerList>() {
+                        if let Ok(list) = attr.parse_args::<NumberArgList>() {
                             for val in list.0 {
-                                let n;
-
-                                match val.base10_parse::<u128>() {
-                                    Ok(num) => n = num,
-                                    Err(e) => {
-                                        emit_error! {
-                                            val,
-                                            "The `#[eq]` attribute must be one or more positive integer literals";
-                                            note = e;
-                                        }
-
-                                        continue;
-                                    }
-                                }
+                                let n = val.into_value(params.kind());
 
                                 if let Some(prev) = exacts.insert(n, variant.ident.clone()) {
                                     emit_error! {
@@ -139,7 +135,7 @@ impl Variants {
                                 params.abort_if_out_of_bounds(attr, n);
 
                                 variant.fields = syn::Fields::Unnamed(parse_quote! {
-                                    (#inner_name<#ty>)
+                                    (#value_name<#ty>)
                                 });
                             }
                         } else {
@@ -160,44 +156,19 @@ impl Variants {
 
                             fn parse_val(
                                 val: &Option<impl AsRef<syn::Expr>>,
-                            ) -> Result<Option<u128>, ()> {
+                                kind: NumberKind,
+                            ) -> Option<NumberValue> {
                                 let val = match &val {
                                     Some(v) => v.as_ref(),
-                                    None => {
-                                        return Ok(None);
-                                    }
+                                    None => return None,
                                 };
 
-                                let val: UIntegerArg = parse_quote!(#val);
-
-                                if let Ok(num) = val.base10_parse::<u128>() {
-                                    Ok(Some(num))
-                                } else {
-                                    Err(())
-                                }
+                                let val: NumberArg = parse_quote!(#val);
+                                Some(val.into_value(kind))
                             }
 
-                            let start = if let Ok(n) = parse_val(&val.start) {
-                                n
-                            } else {
-                                emit_error! {
-                                    val,
-                                    "The range start must be positive integer literals"
-                                }
-
-                                continue;
-                            };
-
-                            let end = if let Ok(n) = parse_val(&val.end) {
-                                n
-                            } else {
-                                emit_error! {
-                                    val,
-                                    "The range end must be positive integer literals"
-                                }
-
-                                continue;
-                            };
+                            let start = parse_val(&val.start, params.kind());
+                            let end = parse_val(&val.end, params.kind());
 
                             if start.is_none() && end.is_none() {
                                 emit_error! {
@@ -227,8 +198,10 @@ impl Variants {
 
                             ranges.push((start, end, half_open, variant.ident.clone()));
 
+                            let wrapper_name = format_ident!("{}Value", &variant.ident);
+
                             variant.fields = syn::Fields::Unnamed(parse_quote! {
-                                (#inner_name<#ty>)
+                                (#wrapper_name)
                             });
                         } else {
                             emit_error! {
@@ -250,7 +223,7 @@ impl Variants {
                         catchall = Some(variant.ident.clone());
 
                         variant.fields = syn::Fields::Unnamed(parse_quote! {
-                            (#inner_name<#ty>)
+                            (#value_name<#ty>)
                         });
                     }
                     _ => {}
@@ -267,7 +240,7 @@ impl Variants {
         let lower_limit = params.lower_limit_value();
         let upper_limit = params.upper_limit_value();
         let mut covered = if !has_catchall {
-            HashSet::with_capacity((upper_limit - lower_limit + 1) as usize)
+            HashSet::with_capacity((upper_limit.clone() - lower_limit + 1).into_usize())
         } else {
             HashSet::new()
         };
@@ -276,7 +249,7 @@ impl Variants {
             vis,
             name,
             mod_name,
-            inner_name,
+            value_name,
             exacts: exacts
                 .into_iter()
                 .map(|(n, v)| {
@@ -294,33 +267,37 @@ impl Variants {
                         match (s, e) {
                             (Some(s), Some(e)) => {
                                 if h {
-                                    for n in s..e {
+                                    for n in s.range(e) {
                                         covered.insert(n);
                                     }
                                 } else {
-                                    for n in s..=e {
+                                    for n in s.range(e + 1) {
                                         covered.insert(n);
                                     }
                                 }
                             }
                             (Some(s), None) => {
                                 if h {
-                                    for n in s..upper_limit {
+                                    let upper_limit = upper_limit;
+                                    for n in s.range(upper_limit) {
                                         covered.insert(n);
                                     }
                                 } else {
-                                    for n in s..=upper_limit {
+                                    let upper_limit = upper_limit;
+                                    for n in s.range(upper_limit + 1) {
                                         covered.insert(n);
                                     }
                                 }
                             }
                             (None, Some(e)) => {
                                 if h {
-                                    for n in lower_limit..e {
+                                    let lower_limit = lower_limit;
+                                    for n in lower_limit.range(e) {
                                         covered.insert(n);
                                     }
                                 } else {
-                                    for n in lower_limit..=e {
+                                    let lower_limit = lower_limit;
+                                    for n in lower_limit.range(e + 1) {
                                         covered.insert(n);
                                     }
                                 }
@@ -341,7 +318,7 @@ impl Variants {
         };
 
         if !has_catchall {
-            for n in lower_limit..=upper_limit {
+            for n in lower_limit.range(upper_limit + 1) {
                 if !covered.contains(&n) {
                     emit_error! {
                         item,

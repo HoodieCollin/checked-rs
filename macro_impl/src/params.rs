@@ -1,7 +1,13 @@
+use std::iter::FusedIterator;
+
 use proc_macro2::TokenStream;
-use proc_macro_error::abort;
+use proc_macro_error::{abort, abort_call_site};
 use quote::{quote, ToTokens};
 use syn::{parse::Parse, parse_quote, spanned::Spanned};
+
+pub mod attr_params;
+pub mod enum_variants;
+pub mod struct_item;
 
 /// Custom keywords used when parsing the `clamped` attribute.
 mod kw {
@@ -9,47 +15,59 @@ mod kw {
     syn::custom_keyword!(behavior);
     syn::custom_keyword!(lower);
     syn::custom_keyword!(upper);
+    syn::custom_keyword!(Soft);
+    syn::custom_keyword!(Hard);
+    syn::custom_keyword!(Saturate);
     syn::custom_keyword!(Saturating);
+    syn::custom_keyword!(Panic);
     syn::custom_keyword!(Panicking);
     syn::custom_keyword!(MIN);
     syn::custom_keyword!(MAX);
 }
 
-/// Represents the size of unsigned integer.
-#[derive(Debug, Clone)]
-pub enum UIntKind {
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
+#[derive(Clone)]
+pub enum AsSoftOrHard {
+    Soft {
+        as_token: syn::Token![as],
+        soft: kw::Soft,
+    },
+    Hard {
+        as_token: syn::Token![as],
+        hard: kw::Hard,
+    },
 }
 
-impl Parse for UIntKind {
+impl Parse for AsSoftOrHard {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let ident = input.parse::<syn::Ident>()?;
-        match ident.to_string().as_str() {
-            "u8" => Ok(Self::U8),
-            "u16" => Ok(Self::U16),
-            "u32" => Ok(Self::U32),
-            "u64" => Ok(Self::U64),
-            "u128" => Ok(Self::U128),
-            _ => abort!(ident, "expected unsigned integer type"),
+        let as_token = input.parse()?;
+        if input.peek(kw::Soft) {
+            Ok(Self::Soft {
+                as_token,
+                soft: input.parse()?,
+            })
+        } else if input.peek(kw::Hard) {
+            Ok(Self::Hard {
+                as_token,
+                hard: input.parse()?,
+            })
+        } else {
+            Err(input.error("expected `Soft` or `Hard`"))
         }
     }
 }
 
-impl ToTokens for UIntKind {
+impl ToTokens for AsSoftOrHard {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let kind = match self {
-            Self::U8 => "u8",
-            Self::U16 => "u16",
-            Self::U32 => "u32",
-            Self::U64 => "u64",
-            Self::U128 => "u128",
-        };
-
-        tokens.extend(syn::parse_str::<TokenStream>(kind).unwrap());
+        match self {
+            Self::Soft { as_token, soft } => {
+                as_token.to_tokens(tokens);
+                soft.to_tokens(tokens);
+            }
+            Self::Hard { as_token, hard } => {
+                as_token.to_tokens(tokens);
+                hard.to_tokens(tokens);
+            }
+        }
     }
 }
 
@@ -109,18 +127,489 @@ impl ToTokens for SemiOrComma {
     }
 }
 
-/// Represents the unsigned integer argument. It can be a literal or a the MIN/MAX constant.
+/// Represents the `Saturate` or `Saturating` keyword.
 #[derive(Clone)]
-pub enum UIntegerArg {
+pub enum SaturateOrSaturating {
+    Saturate(kw::Saturate),
+    Saturating(kw::Saturating),
+}
+
+impl Parse for SaturateOrSaturating {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(kw::Saturate) {
+            Ok(Self::Saturate(input.parse()?))
+        } else if input.peek(kw::Saturating) {
+            Ok(Self::Saturating(input.parse()?))
+        } else {
+            Err(input.error("expected `Saturate` or `Saturating`"))
+        }
+    }
+}
+
+impl ToTokens for SaturateOrSaturating {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::Saturate(kw) => kw.to_tokens(tokens),
+            Self::Saturating(kw) => kw.to_tokens(tokens),
+        }
+    }
+}
+
+/// Represents the `Saturate` or `Saturating` keyword.
+#[derive(Clone)]
+pub enum PanicOrPanicking {
+    Panic(kw::Panic),
+    Panicking(kw::Panicking),
+}
+
+impl Parse for PanicOrPanicking {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(kw::Panic) {
+            Ok(Self::Panic(input.parse()?))
+        } else if input.peek(kw::Panicking) {
+            Ok(Self::Panicking(input.parse()?))
+        } else {
+            Err(input.error("expected `Panic` or `Panicking`"))
+        }
+    }
+}
+
+impl ToTokens for PanicOrPanicking {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::Panic(kw) => kw.to_tokens(tokens),
+            Self::Panicking(kw) => kw.to_tokens(tokens),
+        }
+    }
+}
+
+/// Represents the size of number.
+#[derive(Debug, Clone, Copy)]
+pub enum NumberKind {
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    USize,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    ISize,
+}
+
+impl Parse for NumberKind {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let ident = input.parse::<syn::Ident>()?;
+        match ident.to_string().as_str() {
+            "u8" => Ok(Self::U8),
+            "u16" => Ok(Self::U16),
+            "u32" => Ok(Self::U32),
+            "u64" => Ok(Self::U64),
+            "u128" => Ok(Self::U128),
+            "usize" => Ok(Self::USize),
+            "i8" => Ok(Self::I8),
+            "i16" => Ok(Self::I16),
+            "i32" => Ok(Self::I32),
+            "i64" => Ok(Self::I64),
+            "i128" => Ok(Self::I128),
+            "isize" => Ok(Self::ISize),
+            _ => abort!(ident, "expected a number type"),
+        }
+    }
+}
+
+impl ToTokens for NumberKind {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let kind = match self {
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::U128 => "u128",
+            Self::USize => "usize",
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::I128 => "i128",
+            Self::ISize => "isize",
+        };
+
+        tokens.extend(syn::parse_str::<TokenStream>(kind).unwrap());
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum NumberValue {
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    U128(u128),
+    USize(usize),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    I128(i128),
+    ISize(isize),
+}
+
+impl From<u8> for NumberValue {
+    fn from(n: u8) -> Self {
+        Self::U8(n)
+    }
+}
+
+impl From<u16> for NumberValue {
+    fn from(n: u16) -> Self {
+        Self::U16(n)
+    }
+}
+
+impl From<u32> for NumberValue {
+    fn from(n: u32) -> Self {
+        Self::U32(n)
+    }
+}
+
+impl From<u64> for NumberValue {
+    fn from(n: u64) -> Self {
+        Self::U64(n)
+    }
+}
+
+impl From<u128> for NumberValue {
+    fn from(n: u128) -> Self {
+        Self::U128(n)
+    }
+}
+
+impl From<usize> for NumberValue {
+    fn from(n: usize) -> Self {
+        Self::USize(n)
+    }
+}
+
+impl From<i8> for NumberValue {
+    fn from(n: i8) -> Self {
+        Self::I8(n)
+    }
+}
+
+impl From<i16> for NumberValue {
+    fn from(n: i16) -> Self {
+        Self::I16(n)
+    }
+}
+
+impl From<i32> for NumberValue {
+    fn from(n: i32) -> Self {
+        Self::I32(n)
+    }
+}
+
+impl From<i64> for NumberValue {
+    fn from(n: i64) -> Self {
+        Self::I64(n)
+    }
+}
+
+impl From<i128> for NumberValue {
+    fn from(n: i128) -> Self {
+        Self::I128(n)
+    }
+}
+
+impl From<isize> for NumberValue {
+    fn from(n: isize) -> Self {
+        Self::ISize(n)
+    }
+}
+
+impl std::ops::Add for NumberValue {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::U8(a), Self::U8(b)) => Self::U8(a + b),
+            (Self::U16(a), Self::U16(b)) => Self::U16(a + b),
+            (Self::U32(a), Self::U32(b)) => Self::U32(a + b),
+            (Self::U64(a), Self::U64(b)) => Self::U64(a + b),
+            (Self::U128(a), Self::U128(b)) => Self::U128(a + b),
+            (Self::USize(a), Self::USize(b)) => Self::USize(a + b),
+            (Self::I8(a), Self::I8(b)) => Self::I8(a + b),
+            (Self::I16(a), Self::I16(b)) => Self::I16(a + b),
+            (Self::I32(a), Self::I32(b)) => Self::I32(a + b),
+            (Self::I64(a), Self::I64(b)) => Self::I64(a + b),
+            (Self::I128(a), Self::I128(b)) => Self::I128(a + b),
+            (Self::ISize(a), Self::ISize(b)) => Self::ISize(a + b),
+            _ => abort_call_site!("types must match"),
+        }
+    }
+}
+
+impl std::ops::Add<&Self> for NumberValue {
+    type Output = Self;
+
+    fn add(self, rhs: &Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::U8(a), Self::U8(b)) => Self::U8(a + b),
+            (Self::U16(a), Self::U16(b)) => Self::U16(a + b),
+            (Self::U32(a), Self::U32(b)) => Self::U32(a + b),
+            (Self::U64(a), Self::U64(b)) => Self::U64(a + b),
+            (Self::U128(a), Self::U128(b)) => Self::U128(a + b),
+            (Self::USize(a), Self::USize(b)) => Self::USize(a + b),
+            (Self::I8(a), Self::I8(b)) => Self::I8(a + b),
+            (Self::I16(a), Self::I16(b)) => Self::I16(a + b),
+            (Self::I32(a), Self::I32(b)) => Self::I32(a + b),
+            (Self::I64(a), Self::I64(b)) => Self::I64(a + b),
+            (Self::I128(a), Self::I128(b)) => Self::I128(a + b),
+            (Self::ISize(a), Self::ISize(b)) => Self::ISize(a + b),
+            _ => abort_call_site!("types must match"),
+        }
+    }
+}
+
+impl std::ops::Add<usize> for NumberValue {
+    type Output = Self;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        match self {
+            Self::U8(n) => Self::U8(n + rhs as u8),
+            Self::U16(n) => Self::U16(n + rhs as u16),
+            Self::U32(n) => Self::U32(n + rhs as u32),
+            Self::U64(n) => Self::U64(n + rhs as u64),
+            Self::U128(n) => Self::U128(n + rhs as u128),
+            Self::USize(n) => Self::USize(n + rhs),
+            Self::I8(n) => Self::I8(n + rhs as i8),
+            Self::I16(n) => Self::I16(n + rhs as i16),
+            Self::I32(n) => Self::I32(n + rhs as i32),
+            Self::I64(n) => Self::I64(n + rhs as i64),
+            Self::I128(n) => Self::I128(n + rhs as i128),
+            Self::ISize(n) => Self::ISize(n + rhs as isize),
+        }
+    }
+}
+
+impl std::ops::Sub for NumberValue {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::U8(a), Self::U8(b)) => Self::U8(a - b),
+            (Self::U16(a), Self::U16(b)) => Self::U16(a - b),
+            (Self::U32(a), Self::U32(b)) => Self::U32(a - b),
+            (Self::U64(a), Self::U64(b)) => Self::U64(a - b),
+            (Self::U128(a), Self::U128(b)) => Self::U128(a - b),
+            (Self::USize(a), Self::USize(b)) => Self::USize(a - b),
+            (Self::I8(a), Self::I8(b)) => Self::I8(a - b),
+            (Self::I16(a), Self::I16(b)) => Self::I16(a - b),
+            (Self::I32(a), Self::I32(b)) => Self::I32(a - b),
+            (Self::I64(a), Self::I64(b)) => Self::I64(a - b),
+            (Self::I128(a), Self::I128(b)) => Self::I128(a - b),
+            (Self::ISize(a), Self::ISize(b)) => Self::ISize(a - b),
+            _ => abort_call_site!("unsupported types"),
+        }
+    }
+}
+
+impl std::ops::Sub<&Self> for NumberValue {
+    type Output = Self;
+
+    fn sub(self, rhs: &Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::U8(a), Self::U8(b)) => Self::U8(a - b),
+            (Self::U16(a), Self::U16(b)) => Self::U16(a - b),
+            (Self::U32(a), Self::U32(b)) => Self::U32(a - b),
+            (Self::U64(a), Self::U64(b)) => Self::U64(a - b),
+            (Self::U128(a), Self::U128(b)) => Self::U128(a - b),
+            (Self::USize(a), Self::USize(b)) => Self::USize(a - b),
+            (Self::I8(a), Self::I8(b)) => Self::I8(a - b),
+            (Self::I16(a), Self::I16(b)) => Self::I16(a - b),
+            (Self::I32(a), Self::I32(b)) => Self::I32(a - b),
+            (Self::I64(a), Self::I64(b)) => Self::I64(a - b),
+            (Self::I128(a), Self::I128(b)) => Self::I128(a - b),
+            (Self::ISize(a), Self::ISize(b)) => Self::ISize(a - b),
+            _ => abort_call_site!("unsupported types"),
+        }
+    }
+}
+
+impl std::ops::Sub<usize> for NumberValue {
+    type Output = Self;
+
+    fn sub(self, rhs: usize) -> Self::Output {
+        match self {
+            Self::U8(n) => Self::U8(n - rhs as u8),
+            Self::U16(n) => Self::U16(n - rhs as u16),
+            Self::U32(n) => Self::U32(n - rhs as u32),
+            Self::U64(n) => Self::U64(n - rhs as u64),
+            Self::U128(n) => Self::U128(n - rhs as u128),
+            Self::USize(n) => Self::USize(n - rhs),
+            Self::I8(n) => Self::I8(n - rhs as i8),
+            Self::I16(n) => Self::I16(n - rhs as i16),
+            Self::I32(n) => Self::I32(n - rhs as i32),
+            Self::I64(n) => Self::I64(n - rhs as i64),
+            Self::I128(n) => Self::I128(n - rhs as i128),
+            Self::ISize(n) => Self::ISize(n - rhs as isize),
+        }
+    }
+}
+
+impl std::ops::RangeBounds<NumberValue> for NumberValue {
+    fn start_bound(&self) -> std::ops::Bound<&NumberValue> {
+        std::ops::Bound::Included(self)
+    }
+
+    fn end_bound(&self) -> std::ops::Bound<&NumberValue> {
+        std::ops::Bound::Excluded(self)
+    }
+}
+
+impl std::fmt::Display for NumberValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::U8(n) => write!(f, "{}", n),
+            Self::U16(n) => write!(f, "{}", n),
+            Self::U32(n) => write!(f, "{}", n),
+            Self::U64(n) => write!(f, "{}", n),
+            Self::U128(n) => write!(f, "{}", n),
+            Self::USize(n) => write!(f, "{}", n),
+            Self::I8(n) => write!(f, "{}", n),
+            Self::I16(n) => write!(f, "{}", n),
+            Self::I32(n) => write!(f, "{}", n),
+            Self::I64(n) => write!(f, "{}", n),
+            Self::I128(n) => write!(f, "{}", n),
+            Self::ISize(n) => write!(f, "{}", n),
+        }
+    }
+}
+
+impl ToTokens for NumberValue {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::U8(n) => n.to_tokens(tokens),
+            Self::U16(n) => n.to_tokens(tokens),
+            Self::U32(n) => n.to_tokens(tokens),
+            Self::U64(n) => n.to_tokens(tokens),
+            Self::U128(n) => n.to_tokens(tokens),
+            Self::USize(n) => n.to_tokens(tokens),
+            Self::I8(n) => n.to_tokens(tokens),
+            Self::I16(n) => n.to_tokens(tokens),
+            Self::I32(n) => n.to_tokens(tokens),
+            Self::I64(n) => n.to_tokens(tokens),
+            Self::I128(n) => n.to_tokens(tokens),
+            Self::ISize(n) => n.to_tokens(tokens),
+        }
+    }
+}
+
+impl NumberValue {
+    pub fn into_usize(self) -> usize {
+        match self {
+            Self::U8(n) => n as usize,
+            Self::U16(n) => n as usize,
+            Self::U32(n) => n as usize,
+            Self::U64(n) => n as usize,
+            Self::U128(n) => n as usize,
+            Self::USize(n) => n,
+            Self::I8(n) => n as usize,
+            Self::I16(n) => n as usize,
+            Self::I32(n) => n as usize,
+            Self::I64(n) => n as usize,
+            Self::I128(n) => n as usize,
+            Self::ISize(n) => n as usize,
+        }
+    }
+
+    pub fn range(self, end: Self) -> NumberValueIter {
+        NumberValueIter::new(self, end, 1.into())
+    }
+}
+
+pub struct NumberValueIter {
+    a: NumberValue,
+    b: NumberValue,
+    step: NumberValue,
+}
+
+impl Iterator for NumberValueIter {
+    type Item = NumberValue;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.a + self.step;
+
+        if next < self.b {
+            self.a = next;
+            Some(next)
+        } else {
+            None
+        }
+    }
+}
+
+impl ExactSizeIterator for NumberValueIter {
+    fn len(&self) -> usize {
+        let diff = self.b - self.a;
+        let step = self.step.into_usize();
+
+        (diff.into_usize() + step - 1) / step
+    }
+}
+
+impl DoubleEndedIterator for NumberValueIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let next = self.b - self.step;
+
+        if next > self.a {
+            self.b = next;
+            Some(next)
+        } else {
+            None
+        }
+    }
+}
+
+impl FusedIterator for NumberValueIter {}
+
+impl NumberValueIter {
+    pub fn new(a: NumberValue, b: NumberValue, step: NumberValue) -> Self {
+        match (a, b, step) {
+            (NumberValue::U8(..), NumberValue::U8(..), NumberValue::U8(..)) => {}
+            (NumberValue::U16(..), NumberValue::U16(..), NumberValue::U16(..)) => {}
+            (NumberValue::U32(..), NumberValue::U32(..), NumberValue::U32(..)) => {}
+            (NumberValue::U64(..), NumberValue::U64(..), NumberValue::U64(..)) => {}
+            (NumberValue::U128(..), NumberValue::U128(..), NumberValue::U128(..)) => {}
+            (NumberValue::USize(..), NumberValue::USize(..), NumberValue::USize(..)) => {}
+            (NumberValue::I8(..), NumberValue::I8(..), NumberValue::I8(..)) => {}
+            (NumberValue::I16(..), NumberValue::I16(..), NumberValue::I16(..)) => {}
+            (NumberValue::I32(..), NumberValue::I32(..), NumberValue::I32(..)) => {}
+            (NumberValue::I64(..), NumberValue::I64(..), NumberValue::I64(..)) => {}
+            (NumberValue::I128(..), NumberValue::I128(..), NumberValue::I128(..)) => {}
+            (NumberValue::ISize(..), NumberValue::ISize(..), NumberValue::ISize(..)) => {}
+            _ => abort_call_site!("types must match"),
+        }
+
+        Self { a, b, step }
+    }
+}
+
+/// Represents the number argument. It can be a literal or a the MIN/MAX constant.
+#[derive(Clone)]
+pub enum NumberArg {
     Literal(syn::LitInt),
     Constant {
-        kind: UIntKind,
+        kind: NumberKind,
         dbl_colon: syn::Token![::],
         ident: MinOrMax,
     },
 }
 
-impl Parse for UIntegerArg {
+impl Parse for NumberArg {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         if input.peek(syn::LitInt) {
             Ok(Self::Literal(input.parse()?))
@@ -138,7 +627,7 @@ impl Parse for UIntegerArg {
     }
 }
 
-impl ToTokens for UIntegerArg {
+impl ToTokens for NumberArg {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
             Self::Literal(lit) => lit.to_tokens(tokens),
@@ -159,10 +648,79 @@ impl ToTokens for UIntegerArg {
     }
 }
 
-impl UIntegerArg {
+impl NumberArg {
+    pub fn new_min_constant(kind: NumberKind) -> Self {
+        Self::Constant {
+            kind,
+            dbl_colon: parse_quote!(::),
+            ident: MinOrMax::Min(parse_quote!(MIN)),
+        }
+    }
+
+    pub fn new_max_constant(kind: NumberKind) -> Self {
+        Self::Constant {
+            kind,
+            dbl_colon: parse_quote!(::),
+            ident: MinOrMax::Max(parse_quote!(MAX)),
+        }
+    }
+
+    pub fn into_value(&self, kind: NumberKind) -> NumberValue {
+        match kind {
+            NumberKind::U8 => NumberValue::U8(match self.base10_parse() {
+                Ok(n) => n,
+                Err(e) => abort_call_site!(e.to_string()),
+            }),
+            NumberKind::U16 => NumberValue::U16(match self.base10_parse() {
+                Ok(n) => n,
+                Err(e) => abort_call_site!(e.to_string()),
+            }),
+            NumberKind::U32 => NumberValue::U32(match self.base10_parse() {
+                Ok(n) => n,
+                Err(e) => abort_call_site!(e.to_string()),
+            }),
+            NumberKind::U64 => NumberValue::U64(match self.base10_parse() {
+                Ok(n) => n,
+                Err(e) => abort_call_site!(e.to_string()),
+            }),
+            NumberKind::U128 => NumberValue::U128(match self.base10_parse() {
+                Ok(n) => n,
+                Err(e) => abort_call_site!(e.to_string()),
+            }),
+            NumberKind::USize => NumberValue::USize(match self.base10_parse() {
+                Ok(n) => n,
+                Err(e) => abort_call_site!(e.to_string()),
+            }),
+            NumberKind::I8 => NumberValue::I8(match self.base10_parse() {
+                Ok(n) => n,
+                Err(e) => abort_call_site!(e.to_string()),
+            }),
+            NumberKind::I16 => NumberValue::I16(match self.base10_parse() {
+                Ok(n) => n,
+                Err(e) => abort_call_site!(e.to_string()),
+            }),
+            NumberKind::I32 => NumberValue::I32(match self.base10_parse() {
+                Ok(n) => n,
+                Err(e) => abort_call_site!(e.to_string()),
+            }),
+            NumberKind::I64 => NumberValue::I64(match self.base10_parse() {
+                Ok(n) => n,
+                Err(e) => abort_call_site!(e.to_string()),
+            }),
+            NumberKind::I128 => NumberValue::I128(match self.base10_parse() {
+                Ok(n) => n,
+                Err(e) => abort_call_site!(e.to_string()),
+            }),
+            NumberKind::ISize => NumberValue::ISize(match self.base10_parse() {
+                Ok(n) => n,
+                Err(e) => abort_call_site!(e.to_string()),
+            }),
+        }
+    }
+
     /// Output the value as a bare literal number in a token stream.
-    pub fn into_literal_as_tokens(&self) -> TokenStream {
-        syn::parse_str(self.base10_parse::<u128>().unwrap().to_string().as_str()).unwrap()
+    pub fn into_literal_as_tokens(&self, kind: NumberKind) -> TokenStream {
+        self.into_value(kind).into_token_stream()
     }
 
     /// Parse the value as a base 10 number.
@@ -180,18 +738,32 @@ impl UIntegerArg {
             } => {
                 let n = match ident {
                     MinOrMax::Min(..) => match kind {
-                        UIntKind::U8 => u8::MIN.to_string(),
-                        UIntKind::U16 => u16::MIN.to_string(),
-                        UIntKind::U32 => u32::MIN.to_string(),
-                        UIntKind::U64 => u64::MIN.to_string(),
-                        UIntKind::U128 => u128::MIN.to_string(),
+                        NumberKind::U8 => u8::MIN.to_string(),
+                        NumberKind::U16 => u16::MIN.to_string(),
+                        NumberKind::U32 => u32::MIN.to_string(),
+                        NumberKind::U64 => u64::MIN.to_string(),
+                        NumberKind::U128 => u128::MIN.to_string(),
+                        NumberKind::USize => usize::MIN.to_string(),
+                        NumberKind::I8 => i8::MIN.to_string(),
+                        NumberKind::I16 => i16::MIN.to_string(),
+                        NumberKind::I32 => i32::MIN.to_string(),
+                        NumberKind::I64 => i64::MIN.to_string(),
+                        NumberKind::I128 => i128::MIN.to_string(),
+                        NumberKind::ISize => isize::MIN.to_string(),
                     },
                     MinOrMax::Max(..) => match kind {
-                        UIntKind::U8 => u8::MAX.to_string(),
-                        UIntKind::U16 => u16::MAX.to_string(),
-                        UIntKind::U32 => u32::MAX.to_string(),
-                        UIntKind::U64 => u64::MAX.to_string(),
-                        UIntKind::U128 => u128::MAX.to_string(),
+                        NumberKind::U8 => u8::MAX.to_string(),
+                        NumberKind::U16 => u16::MAX.to_string(),
+                        NumberKind::U32 => u32::MAX.to_string(),
+                        NumberKind::U64 => u64::MAX.to_string(),
+                        NumberKind::U128 => u128::MAX.to_string(),
+                        NumberKind::USize => usize::MAX.to_string(),
+                        NumberKind::I8 => i8::MAX.to_string(),
+                        NumberKind::I16 => i16::MAX.to_string(),
+                        NumberKind::I32 => i32::MAX.to_string(),
+                        NumberKind::I64 => i64::MAX.to_string(),
+                        NumberKind::I128 => i128::MAX.to_string(),
+                        NumberKind::ISize => isize::MAX.to_string(),
                     },
                 };
 
@@ -207,15 +779,15 @@ impl UIntegerArg {
 /// Represents the behavior argument. It can be `Saturating` or `Panicking`.
 #[derive(Clone)]
 pub enum BehaviorArg {
-    Saturating(kw::Saturating),
-    Panicking(kw::Panicking),
+    Saturating(SaturateOrSaturating),
+    Panicking(PanicOrPanicking),
 }
 
 impl Parse for BehaviorArg {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        if input.peek(kw::Saturating) {
+        if input.peek(kw::Saturate) || input.peek(kw::Saturating) {
             Ok(Self::Saturating(input.parse()?))
-        } else if input.peek(kw::Panicking) {
+        } else if input.peek(kw::Panic) || input.peek(kw::Panicking) {
             Ok(Self::Panicking(input.parse()?))
         } else {
             Err(input.error("expected `Saturating` or `Panicking`"))
@@ -233,599 +805,5 @@ impl ToTokens for BehaviorArg {
                 Panicking
             },
         });
-    }
-}
-
-/// Represents the parameters of the `clamped` attribute.
-/// Only the `uinteger` and `default` parameters are required.
-/// The `uinteger` parameter must be first while the order of the rest is not important.
-#[derive(Clone)]
-pub struct ClampParams {
-    pub uinteger: syn::TypePath,
-    pub uinteger_semi: SemiOrComma,
-    pub default_kw: kw::default,
-    pub default_eq: syn::Token![=],
-    pub default_val: UIntegerArg,
-    pub default_semi: Option<SemiOrComma>,
-    pub behavior_kw: kw::behavior,
-    pub behavior_eq: syn::Token![=],
-    pub behavior_val: BehaviorArg,
-    pub behavior_semi: Option<SemiOrComma>,
-    pub lower_kw: Option<kw::lower>,
-    pub lower_eq: Option<syn::Token![=]>,
-    pub lower_val: Option<UIntegerArg>,
-    pub lower_semi: Option<SemiOrComma>,
-    pub upper_kw: Option<kw::upper>,
-    pub upper_eq: Option<syn::Token![=]>,
-    pub upper_val: Option<UIntegerArg>,
-    pub upper_semi: Option<SemiOrComma>,
-}
-
-impl Parse for ClampParams {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let uinteger = input.parse()?;
-        let uinteger_semi = input.parse()?;
-        let mut default_kw = None;
-        let mut default_eq = None;
-        let mut default_val = None;
-        let mut default_semi = None;
-        let mut behavior_kw = None;
-        let mut behavior_eq = None;
-        let mut behavior_val = None;
-        let mut behavior_semi = None;
-        let mut lower_kw = None;
-        let mut lower_eq = None;
-        let mut lower_val = None;
-        let mut lower_semi = None;
-        let mut upper_kw = None;
-        let mut upper_eq = None;
-        let mut upper_val = None;
-        let mut upper_semi = None;
-
-        let mut done = false;
-
-        while !done {
-            let mut found_semi = false;
-
-            if input.peek(kw::default) {
-                if default_kw.is_some() {
-                    return Err(input.error("duplicate `default` param"));
-                }
-
-                default_kw = Some(input.parse::<kw::default>()?);
-                default_eq = Some(input.parse::<syn::Token![=]>()?);
-                default_val = Some(input.parse::<UIntegerArg>()?);
-                if !input.is_empty() {
-                    default_semi = Some(input.parse::<SemiOrComma>()?);
-                    found_semi = true;
-                }
-            } else if input.peek(kw::behavior) {
-                if behavior_kw.is_some() {
-                    return Err(input.error("duplicate `behavior` param"));
-                }
-
-                behavior_kw = Some(input.parse::<kw::behavior>()?);
-                behavior_eq = Some(input.parse::<syn::Token![=]>()?);
-                behavior_val = Some(input.parse::<BehaviorArg>()?);
-                if !input.is_empty() {
-                    behavior_semi = Some(input.parse::<SemiOrComma>()?);
-                    found_semi = true;
-                }
-            } else if input.peek(kw::lower) {
-                if lower_kw.is_some() {
-                    return Err(input.error("duplicate `lower` param"));
-                }
-
-                lower_kw = Some(input.parse::<kw::lower>()?);
-                lower_eq = Some(input.parse::<syn::Token![=]>()?);
-                lower_val = Some(input.parse::<UIntegerArg>()?);
-                if !input.is_empty() {
-                    lower_semi = Some(input.parse::<SemiOrComma>()?);
-                    found_semi = true;
-                }
-            } else if input.peek(kw::upper) {
-                if upper_kw.is_some() {
-                    return Err(input.error("duplicate `upper` param"));
-                }
-
-                upper_kw = Some(input.parse::<kw::upper>()?);
-                upper_eq = Some(input.parse::<syn::Token![=]>()?);
-                upper_val = Some(input.parse::<UIntegerArg>()?);
-                if !input.is_empty() {
-                    upper_semi = Some(input.parse::<SemiOrComma>()?);
-                    found_semi = true;
-                }
-            }
-
-            if !found_semi {
-                if default_kw.is_none() {
-                    return Err(input.error("`default` param is required"));
-                }
-
-                done = true;
-            }
-        }
-
-        if behavior_kw.is_none() {
-            behavior_kw = Some(parse_quote!(behavior));
-            behavior_eq = Some(parse_quote!(=));
-            behavior_val = Some(parse_quote!(Panicking));
-        }
-
-        let this = Self {
-            uinteger,
-            uinteger_semi,
-            default_kw: default_kw.unwrap(),
-            default_eq: default_eq.unwrap(),
-            default_val: default_val.unwrap(),
-            default_semi,
-            behavior_kw: behavior_kw.unwrap(),
-            behavior_eq: behavior_eq.unwrap(),
-            behavior_val: behavior_val.unwrap(),
-            behavior_semi,
-            lower_kw,
-            lower_eq,
-            lower_val,
-            lower_semi,
-            upper_kw,
-            upper_eq,
-            upper_val,
-            upper_semi,
-        };
-
-        if !this.is_u128_or_smaller() {
-            abort!(this.uinteger, "expected unsigned integer type")
-        }
-
-        match this.kind() {
-            UIntKind::U8 => {
-                if this.default_val.base10_parse::<u8>().is_err() {
-                    abort!(this.default_val, "expected u8 value")
-                }
-            }
-            UIntKind::U16 => {
-                if this.default_val.base10_parse::<u16>().is_err() {
-                    abort!(this.default_val, "expected u16 value")
-                }
-            }
-            UIntKind::U32 => {
-                if this.default_val.base10_parse::<u32>().is_err() {
-                    abort!(this.default_val, "expected u32 value")
-                }
-            }
-            UIntKind::U64 => {
-                if this.default_val.base10_parse::<u64>().is_err() {
-                    abort!(this.default_val, "expected u64 value")
-                }
-            }
-            UIntKind::U128 => {
-                if this.default_val.base10_parse::<u128>().is_err() {
-                    abort!(this.default_val, "expected u128 value")
-                }
-            }
-        }
-
-        if this.default_value() < this.lower_limit_value() {
-            abort!(
-                this.default_val,
-                "default value is less than lower bound value"
-            )
-        }
-
-        if this.default_value() > this.upper_limit_value() {
-            abort!(this.default_val, "default value exceeds upper bound value")
-        }
-
-        Ok(this)
-    }
-}
-
-impl ClampParams {
-    /// Get the unsigned integer kind.
-    pub fn kind(&self) -> UIntKind {
-        self.uinteger
-            .path
-            .segments
-            .iter()
-            .last()
-            .map(|s| match s.ident.to_string().as_str() {
-                "u8" => UIntKind::U8,
-                "u16" => UIntKind::U16,
-                "u32" => UIntKind::U32,
-                "u64" => UIntKind::U64,
-                "u128" => UIntKind::U128,
-                _ => abort!(self.uinteger, "expected unsigned integer type"),
-            })
-            .unwrap_or_else(|| abort!(self.uinteger, "expected unsigned integer type"))
-    }
-
-    /// Interpret the default value as `u128`.
-    pub fn default_value(&self) -> u128 {
-        if let Ok(n) = self.default_val.base10_parse() {
-            n
-        } else {
-            abort!(self.default_val, "expected integer value")
-        }
-    }
-
-    /// Get the behavior type.
-    pub fn behavior_type(&self) -> &BehaviorArg {
-        &self.behavior_val
-    }
-
-    /// Interpret the lower limit value as `u128`.
-    pub fn lower_limit_value(&self) -> u128 {
-        if let Some(val) = &self.lower_val {
-            if let Ok(n) = val.base10_parse() {
-                n
-            } else {
-                abort!(val, "expected integer value")
-            }
-        } else {
-            0
-        }
-    }
-
-    /// Output the lower limit value as a bare literal in a token stream.
-    pub fn lower_limit_token(&self) -> TokenStream {
-        syn::parse_str(&self.lower_limit_value().to_string()).unwrap()
-    }
-
-    /// Interpret the upper limit value as `u128`.
-    pub fn upper_limit_value(&self) -> u128 {
-        if let Some(val) = &self.upper_val {
-            if let Ok(n) = val.base10_parse() {
-                n
-            } else {
-                abort!(val, "expected integer value")
-            }
-        } else {
-            match self.kind() {
-                UIntKind::U8 => u8::MAX as u128,
-                UIntKind::U16 => u16::MAX as u128,
-                UIntKind::U32 => u32::MAX as u128,
-                UIntKind::U64 => u64::MAX as u128,
-                UIntKind::U128 => u128::MAX,
-            }
-        }
-    }
-
-    /// Output the upper limit value as a bare literal in a token stream.
-    pub fn upper_limit_token(&self) -> TokenStream {
-        syn::parse_str(&self.upper_limit_value().to_string()).unwrap()
-    }
-
-    /// Validate that an arbitrary value is within the lower and upper limit.
-    pub fn abort_if_out_of_bounds<T: Spanned + ToTokens>(&self, ast: &T, value: u128) {
-        if value < self.lower_limit_value() {
-            abort!(
-                ast,
-                "{:?} value: {} is less than lower limit: {}",
-                self.kind(),
-                value,
-                self.lower_limit_value()
-            )
-        }
-
-        if value > self.upper_limit_value() {
-            abort!(
-                ast,
-                "{:?} value: {} exceeds upper limit: {}",
-                self.kind(),
-                value,
-                self.upper_limit_value()
-            )
-        }
-    }
-
-    /// Check if the unsigned integer kind is `u16` or smaller.
-    pub fn is_u16_or_smaller(&self) -> bool {
-        matches!(self.kind(), UIntKind::U8 | UIntKind::U16)
-    }
-
-    /// Check if the unsigned integer kind is `u16` or larger.
-    pub fn is_u16_or_larger(&self) -> bool {
-        matches!(
-            self.kind(),
-            UIntKind::U16 | UIntKind::U32 | UIntKind::U64 | UIntKind::U128
-        )
-    }
-
-    /// Check if the unsigned integer kind is `u32` or smaller.
-    pub fn is_u32_or_smaller(&self) -> bool {
-        matches!(self.kind(), UIntKind::U8 | UIntKind::U16 | UIntKind::U32)
-    }
-
-    /// Check if the unsigned integer kind is `u32` or larger.
-    pub fn is_u32_or_larger(&self) -> bool {
-        matches!(self.kind(), UIntKind::U32 | UIntKind::U64 | UIntKind::U128)
-    }
-
-    /// Check if the unsigned integer kind is `u64` or smaller.
-    pub fn is_u64_or_smaller(&self) -> bool {
-        matches!(
-            self.kind(),
-            UIntKind::U8 | UIntKind::U16 | UIntKind::U32 | UIntKind::U64
-        )
-    }
-
-    /// Check if the unsigned integer kind is `u64` or larger.
-    pub fn is_u64_or_larger(&self) -> bool {
-        matches!(self.kind(), UIntKind::U64 | UIntKind::U128)
-    }
-
-    /// Check if the unsigned integer kind is `u128` or smaller.
-    pub fn is_u128_or_smaller(&self) -> bool {
-        matches!(
-            self.kind(),
-            UIntKind::U8 | UIntKind::U16 | UIntKind::U32 | UIntKind::U64 | UIntKind::U128
-        )
-    }
-}
-
-/// Represents the expected generic parameters for the internal `CheckedRsOps` derive macro.
-pub struct GenericParams {
-    uinteger_original: Option<syn::Ident>,
-    uinteger: syn::GenericParam,
-    behavior: syn::GenericParam,
-    lower: syn::GenericParam,
-    upper: syn::GenericParam,
-    extras: Vec<syn::GenericParam>,
-    where_clause: Option<syn::WhereClause>,
-}
-
-impl Clone for GenericParams {
-    fn clone(&self) -> Self {
-        Self {
-            uinteger_original: self.uinteger_original.clone(),
-            uinteger: self.uinteger.clone(),
-            behavior: self.behavior.clone(),
-            lower: self.lower.clone(),
-            upper: self.upper.clone(),
-            extras: self.extras.clone(),
-            where_clause: self.where_clause.clone(),
-        }
-    }
-}
-
-impl GenericParams {
-    pub fn from_input(input: &syn::DeriveInput) -> Self {
-        let count = input.generics.params.len();
-        if count < 4 {
-            abort!(input, "expected at least 4 generic parameters")
-        }
-
-        let mut iter = input.generics.params.iter();
-
-        let uinteger = iter.next().cloned().unwrap();
-        let behavior = iter.next().cloned().unwrap();
-
-        let mut extras = Vec::with_capacity(count - 4);
-
-        for _ in 0..count - 4 {
-            extras.push(iter.next().cloned().unwrap());
-        }
-
-        let lower = iter.next().cloned().unwrap();
-        let upper = iter.next().cloned().unwrap();
-
-        Self {
-            uinteger_original: None,
-            uinteger,
-            behavior,
-            lower,
-            upper,
-            extras,
-            where_clause: input.generics.where_clause.clone(),
-        }
-    }
-
-    /// Replace the `uinteger` generic parameter with a new one.
-    pub fn with_uinteger_ident(&self, uinteger: syn::Ident) -> Self {
-        let mut this = self.clone();
-        this.uinteger_original = Some(self.uinteger_ident().clone());
-        this.uinteger = parse_quote!(#uinteger: UInteger);
-        this
-    }
-
-    /// Get the current `uinteger` generic parameter.
-    pub fn uinteger(&self) -> &syn::GenericParam {
-        &self.uinteger
-    }
-
-    /// Get the current `uinteger` generic parameter identifier.
-    pub fn uinteger_ident(&self) -> &syn::Ident {
-        match &self.uinteger {
-            syn::GenericParam::Type(ty) => &ty.ident,
-            _ => abort!(self.uinteger, "expected type parameter"),
-        }
-    }
-
-    /// Get the current `behavior` generic parameter.
-    pub fn behavior(&self) -> &syn::GenericParam {
-        &self.behavior
-    }
-
-    /// Get the current `behavior` generic parameter identifier.
-    pub fn behavior_ident(&self) -> &syn::Ident {
-        match &self.behavior {
-            syn::GenericParam::Type(ty) => &ty.ident,
-            _ => abort!(self.behavior, "expected type parameter"),
-        }
-    }
-
-    /// Get the current `lower` generic parameter.
-    pub fn lower(&self) -> &syn::GenericParam {
-        &self.lower
-    }
-
-    /// Get the current `lower` generic parameter identifier.
-    pub fn lower_ident(&self) -> &syn::Ident {
-        match &self.lower {
-            syn::GenericParam::Const(c) => &c.ident,
-            _ => abort!(self.lower, "expected const parameter"),
-        }
-    }
-
-    /// Get the current `upper` generic parameter.
-    pub fn upper(&self) -> &syn::GenericParam {
-        &self.upper
-    }
-
-    /// Get the current `upper` generic parameter identifier.
-    pub fn upper_ident(&self) -> &syn::Ident {
-        match &self.upper {
-            syn::GenericParam::Const(c) => &c.ident,
-            _ => abort!(self.upper, "expected const parameter"),
-        }
-    }
-
-    /// Get the current extra generic parameters. If the `uinteger` parameter was replaced, it will be updated recursively in the extras.
-    pub fn extras(&self) -> Vec<syn::GenericParam> {
-        if let Some(ident_uinteger) = self.uinteger_original.as_ref() {
-            let alt_ident_uinteger = self.uinteger_ident();
-
-            use syn::visit_mut::{self, VisitMut};
-
-            struct Replacer<'a> {
-                pub ident_uinteger: &'a syn::Ident,
-                pub alt_ident_uinteger: &'a syn::Ident,
-            }
-
-            impl VisitMut for Replacer<'_> {
-                fn visit_type_path_mut(&mut self, node: &mut syn::TypePath) {
-                    let ident_uinteger = self.ident_uinteger;
-                    let alt_ident_uinteger = self.alt_ident_uinteger;
-
-                    if node.path.is_ident(ident_uinteger) {
-                        node.path = parse_quote!(#alt_ident_uinteger);
-                    }
-
-                    visit_mut::visit_type_path_mut(self, node);
-                }
-            }
-
-            let mut replacer = Replacer {
-                ident_uinteger,
-                alt_ident_uinteger: &alt_ident_uinteger,
-            };
-
-            self.extras
-                .iter()
-                .cloned()
-                .map(|mut p| {
-                    replacer.visit_generic_param_mut(&mut p);
-                    p
-                })
-                .collect()
-        } else {
-            self.extras.clone()
-        }
-    }
-
-    /// Get the current extra generic parameter identifiers.
-    pub fn extra_idents(&self) -> Vec<syn::Ident> {
-        self.extras()
-            .into_iter()
-            .map(|p| match p {
-                syn::GenericParam::Type(ty) => ty.ident,
-                syn::GenericParam::Const(c) => c.ident,
-                _ => abort!(p, "expected type or const parameter"),
-            })
-            .collect()
-    }
-
-    /// Get the tokens for the `impl` generics, the type generics, and the `where` clause.
-    pub fn split_for_impl(&self) -> (syn::Generics, syn::Generics, Option<syn::WhereClause>) {
-        let uinteger_param = self.uinteger();
-        let behavior_param = self.behavior();
-        let lower_param = self.lower();
-        let upper_param = self.upper();
-        let extra_params = self.extras();
-
-        let impl_generics: syn::Generics = if self.uinteger_original.is_none() {
-            parse_quote! {
-                <
-                    #uinteger_param,
-                    #behavior_param,
-                    #(#extra_params,)*
-                    #lower_param,
-                    #upper_param
-                >
-            }
-        } else {
-            parse_quote! {
-                <
-                    #behavior_param,
-                    #(#extra_params,)*
-                    #lower_param,
-                    #upper_param
-                >
-            }
-        };
-
-        let uinteger_ident = self.uinteger_ident();
-        let behavior_ident = self.behavior_ident();
-        let lower_ident = self.lower_ident();
-        let upper_ident = self.upper_ident();
-        let extra_idents = self.extra_idents();
-
-        let ty_generics: syn::Generics = parse_quote! {
-            <
-                #uinteger_ident,
-                #behavior_ident,
-                #(#extra_idents,)*
-                #lower_ident,
-                #upper_ident
-            >
-        };
-
-        (impl_generics, ty_generics, self.where_clause.clone())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use quote::ToTokens;
-
-    use super::*;
-
-    #[test]
-    fn extras_mapped() {
-        let input = parse_quote! {
-            struct Foo<T: UInteger, B: Behavior<T>, V, W: AsRef<T>, X, const L: u128, const U: u128> {
-                t: T,
-                b: B,
-                v: V,
-                w: W,
-                x: X,
-            }
-        };
-
-        let params = GenericParams::from_input(&input);
-
-        // let extras = params
-        //     .extras(Some(parse_quote!(u8)))
-        //     .into_iter()
-        //     .map(|p| p.to_token_stream().to_string())
-        //     .collect::<Vec<_>>();
-
-        // assert_eq!(extras.len(), 3);
-
-        // println!("{:#?}", extras);
-
-        let u8_params = params.with_uinteger_ident(parse_quote!(u8));
-
-        let (impl_generics, ty_generics, where_clause) = u8_params.split_for_impl();
-
-        println!(
-            "impl_generics: {}",
-            impl_generics.to_token_stream().to_string()
-        );
-        println!("ty_generics: {}", ty_generics.to_token_stream().to_string());
-        println!(
-            "where_clause: {:?}",
-            where_clause.map(|w| w.to_token_stream().to_string())
-        );
     }
 }

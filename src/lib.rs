@@ -4,91 +4,95 @@
 //!
 //! ## Overview
 //!
-//! The main components of this library are the structs `View` _(plus the `Validator` trait)_, `HardClamp`, `SoftClamp` and the attribute macro `clamped`.
+//! The main components of this library is the the attribute macro `clamped` and the `View` struct _(plus the `Validator` trait)_.
 //! Additionally, there are some traits and types such as `Behavior` and `ClampGuard` that either configure how overflow is handled or provide an alternative way to interact with the clamped types.
 //!
-//! ### `HardClamp`
+//! ### `clamped` attribute macro
 //!
-//! The `HardClamp` struct is a wrapper around an unsigned integer that clamps the value to a specified range.
+//! The `clamped` attribute macro is used to create a specialized clamped type. The macro can be used on either field-less structs or enums with field-less variants.
+//! Whe used on a struct, the struct will be transformed to have a single field that is the clamped value. When used on an enum, the enum will be transformed to have a variant for each state within the clamped range.
 //!
-//! ```no_run
+//! > For the remainder of these docs, `int` will be used to refer to the integer type used for the clamped value.
+//!
+//! The macro requires the following positional arguments:
+//! - `integer`: The integer type to use for the clamped value.
+//!
+//! The macro accepts the following arguments _(in any order)_:
+//! - `behavior`: The behavior to use when the value overflows the limits. The default behavior is `Panicking`.
+//! - `default`: The default value to use when the value is not provided. The default default value is the minimum value.
+//! - `lower`: The lower limit of the clamped value. The default lower limit is the minimum value of the integer type.
+//! - `upper`: The upper limit of the clamped value. The default upper limit is the maximum value of the integer type.
+//!
+//! The transformed type will have the following inherent implementations:
+//! - `new(value: int) -> Self`: A constructor that creates a new clamped value from the provided value.
+//! - `rand() -> Self`: A method that generates a random value within the clamped range.
+//! - `validate(value: int) -> Result<int, Error>`: A method that validates the provided value and returns the value if it is within the clamped range.
+//! - `modify<'a>(&'a mut self) -> Guard<'a>`: A method that returns a guard that can be used to stage _(potentially out-of-bounds)_ changes to the clamped value and either commit or discard the changes.
+//!
+//! The transformed type will have the following custom traits implemented:
+//! - `InherentLimits<int>`: A trait that defines the minimum and maximum values of the clamped range.
+//! - `InherentBehavior`: A trait that defines the behavior to use when the value overflows the limits.
+//! - `ClampedInteger<int>`: A trait that defines the methods for converting to and from the underlying integer type.
+//!
+//! The transformed type will have the following standard traits implemented:
+//! - `Default`, `Deref`, `AsRef`, `FromStr`, `PartialEq`, `PartialOrd`, `Eq`, `Ord`, `Add`, `AddAssign`, `Sub`, `SubAssign`, `Mul`, `MulAssign`, `Div`, `DivAssign`, `Rem`, `RemAssign`, `Neg`, `Not`, `BitAnd`, `BitAndAssign`, `BitOr`, `BitOrAssign`, `BitXor`, `BitXorAssign`.
+//! - `From` implementations are provided to support conversions for the same machine integer types as the underlying integer type.
+//!
+//! > **NOTE**: The `std::cmp` and `std::ops` traits support `rhs` values of the clamped type or the underlying integer type.
+//!
+//! The transformed type will have the following external traits implemented:
+//! - `serde::Serialize`, `serde::Deserialize`
+//!
+//! ### Struct Usage
+//!
+//! When used on a struct, you can optionally specify if it should be a `Soft` or `Hard` clamped type.
+//!
+//! #### Soft Clamps
+//!
+//! Soft clamps are clamped types that **_DO NOT_** enforce the limits on the value. Instead, the value is clamped when it is assigned via the `set` method. The method `set_unchecked` can be used to set the value without clamping. Alternatively, the method `get_mut` can be used to get a mutable reference to the inner value or the arithmetic traits can be used to perform operations on the value without clamping.
+//!
+//! Additionally, they will have the following extra standard traits implemented:
+//! - `DerefMut`, `AsMut`
+//!
+//! #### Hard Clamps
+//!
+//! Hard clamps are clamped types that **_DO_** enforce the limits on the value. The value is clamped when it is created and any operations that would cause the value to overflow the limits will be handled according to the specified behavior.
+//!
+//! > **UNSAFE NOTE**: The `set_unchecked` and `as_mut` methods are available but marked unsafe because they can be used to assign an out-of-bounds value.
+//!
+//! ### Enum Usage
+//!
+//! Each variant of the enum will either represent a specific value within the overall clamped range, a hard clamped sub-range or a special variant that represents any value that is not explicitly handled. The variants will have corresponding methods that can be used to create a new instances of that variant or check if the contained value is that variant.
+//!
+//! > **NOTE**: The enum must account for all possible values within the clamped range. This can be done by using the `#[eq]` and `#[range]` attributes on the variants.
+//! > The `#[other]` attribute can be used to account for any values that are not explicitly handled.
+//!
+//! #### Example
+//!
+//! ```ignore
 //! use checked_rs::prelude::*;
 //!
-//! let mut val = HardClamp::<u8, Saturating, 0, 10>::new(5).unwrap();
-//! assert_eq!(val.get(), 5);
+//! #[clamped(u16, default = 600, behavior = Saturating, lower = 100, upper = 600)]
+//! #[derive(Debug, Clone, Copy)]
+//! enum ResponseCode {
+//!     #[eq(100)]
+//!     Continue,
+//!     #[eq(200)]
+//!     Success,
+//!     #[eq(300)]
+//!     Redirection,
+//!     #[eq(400)]
+//!     BadRequest,
+//!     #[eq(404)]
+//!     NotFound,
+//!     #[range(500..=599)]
+//!     ServerError,
+//!     #[other]
+//!     Unknown,
+//!     #[eq(600)]
+//!     Invalid,
+//! }
 //!
-//! val += 5;
-//! assert_eq!(val.get(), 10);
-//!
-//! val -= 15;
-//! assert_eq!(val.get(), 0);
-//!
-//! val += 20;
-//! assert_eq!(val.get(), 10);
-//! ```
-//!
-//! ### `SoftClamp`
-//!
-//! The `SoftClamp` struct is a wrapper around an unsigned integer that can be checked for if it is within a specified range.
-//!
-//! ```no_run
-//! use checked_rs::prelude::*;
-//!
-//! let mut val = SoftClamp::<u8, Saturating, 0, 10>::new(5);
-//! assert_eq!(*val, 5);
-//! assert_eq!(val.is_valid(), true);
-//!
-//! val += 5;
-//! assert_eq!(*val, 10);
-//! assert_eq!(val.is_valid(), true);
-//!
-//! val -= 15;
-//! assert_eq!(*val, 0);
-//! assert_eq!(val.is_valid(), true);
-//!
-//! *val = 30;
-//! assert_eq!(*val, 30);
-//! assert_eq!(val.is_valid(), false);
-//! ```
-//!
-//! ### `Behavior`
-//!
-//! The `Behavior` trait is used to configure how overflow is handled for the clamped types.
-//! There are two inherent implementations of `Behavior` that can be used: `Panicking` and `Saturating`.
-//! The default behavior is to panic on overflow.
-//!
-//! ### `ClampGuard`
-//!
-//! The `ClampGuard` struct is a RAII type that is used to modify a clamped value via an exclusive borrow. It will allow the value it tracks to go out of bounds temporarily, but will not allow any value to propagate to the original that is invalid.
-//! This is also useful when you want to change a value temporarily and then revert it back to the original value if the change is not valid or is otherwise unwanted.
-//!
-//! ```no_run
-//! use checked_rs::prelude::*;
-//!
-//! let mut val = HardClamp::<u8, Saturating, 0, 10>::new(5).unwrap();
-//!
-//! assert_eq!(val.get(), 5);
-//!
-//! let mut g = val.modify();
-//!
-//! assert_eq!(g.is_changed(), false);
-//!
-//! *g = 10;
-//!
-//! assert_eq!(g.is_changed(), true);
-//!
-//! g.commit().unwrap();
-//!
-//! assert_eq!(val.get(), 10);
-//!
-//! let mut g = val.modify();
-//! *g = 15;
-//!
-//! assert!(g.check().is_err());
-//!
-//! g.discard();
-//!
-//! assert_eq!(val.get(), 10);
 //! ```
 //!
 //! ### `View`
@@ -130,42 +134,18 @@
 //! assert_eq!(&*item, &10);
 //!
 //! ```
-//!
-//! ### `clamped` attribute macro
-//!
-//! The `clamped` attribute macro is used to create a specialized clamped type. The macro can only be used on enums where each variant represents a specific state within the clamped range.
-//! This can be useful when there are multiple states that correspond to a certain set of rules and you want them to be easily distinguishable while still being able to use them in a single integer-like type.
-//!
-//! ```ignore
-//! use checked_rs::prelude::*;
-//!
-//! #[clamped(u16, default = 600, behavior = Saturating, lower = 100, upper = 600)]
-//! #[derive(Debug, Clone, Copy)]
-//! enum ResponseCode {
-//!     #[eq(100)]
-//!     Continue,
-//!     #[eq(200)]
-//!     Success,
-//!     #[eq(300)]
-//!     Redirection,
-//!     #[eq(400)]
-//!     BadRequest,
-//!     #[eq(404)]
-//!     NotFound,
-//!     #[range(500..=599)]
-//!     ServerError,
-//!     #[other]
-//!     Unknown,
-//!     #[eq(600)]
-//!     Invalid,
-//! }
+
+use std::{
+    num,
+    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Sub},
+};
 pub mod clamp;
 pub mod guard;
 pub mod view;
 
 mod reexports {
     #[doc(hidden)]
-    pub use anyhow::*;
+    pub use anyhow::{anyhow, bail, ensure, format_err, Chain, Context, Error, Result};
     #[doc(hidden)]
     pub use serde;
 }
@@ -176,149 +156,66 @@ pub mod prelude {
     pub use crate::clamp::*;
     pub use crate::commit_or_bail;
     pub use crate::view::*;
-    pub use crate::{Behavior, InherentBehavior, UInteger, UIntegerLimits};
+    pub use crate::{Behavior, InherentBehavior, InherentLimits};
     pub use checked_rs_macros::clamped;
 }
 
-mod private {
-    #[inline(always)]
-    pub const unsafe fn into_u128<T: crate::UInteger>(value: T) -> u128 {
-        #[repr(C)]
-        union Conversion<U: crate::UInteger> {
-            from: U,
-            to: u128,
-        }
-
-        Conversion { from: value }.to
-    }
-
-    #[inline(always)]
-    pub const unsafe fn from_u128<T: crate::UInteger>(value: u128) -> T {
-        #[repr(C)]
-        union Conversion<U: crate::UInteger> {
-            from: u128,
-            to: U,
-        }
-
-        Conversion { from: value }.to
-    }
-
-    #[inline(always)]
-    pub const fn assert_invariants<T: crate::UInteger, const LOWER: u128, const UPPER: u128>() {
-        #[cfg(debug_assertions)]
-        {
-            assert!(
-                LOWER <= UPPER,
-                "Lower bound must be less than or equal to upper bound"
-            );
-
-            assert!(
-                T::MAX >= LOWER,
-                "Type maximum must be greater than or equal to lower bound"
-            );
-
-            assert!(
-                T::MAX >= UPPER,
-                "Type maximum must be greater than or equal to upper bound"
-            );
-
-            assert!(
-                T::MIN <= LOWER,
-                "Type minimum must be less than or equal to lower bound"
-            );
-
-            assert!(
-                T::MIN <= UPPER,
-                "Type minimum must be less than or equal to upper bound"
-            );
-        }
-    }
-
-    #[inline(always)]
-    pub const fn validate<T: crate::UInteger, const LOWER: u128, const UPPER: u128>(
-        value: T,
-    ) -> Result<T, crate::clamp::ClampError> {
-        let val = unsafe { into_u128(value) };
-
-        if val < LOWER {
-            Err(crate::clamp::ClampError::TooSmall { val, min: LOWER })
-        } else if val > UPPER {
-            Err(crate::clamp::ClampError::TooLarge { val, max: UPPER })
-        } else {
-            Ok(value)
-        }
-    }
-}
-
-pub trait UIntegerLimits: 'static {
-    const MIN: u128;
-    const MAX: u128;
-}
-
-pub trait UInteger:
-    'static
-    + UIntegerLimits
-    + Copy
-    + Default
-    + Eq
-    + Ord
-    + std::ops::Add
-    + std::ops::Sub
-    + std::ops::Mul
-    + std::ops::Div
-    + std::ops::Rem
-    + std::ops::BitAnd
-    + std::ops::BitOr
-    + std::ops::BitXor
-    + std::ops::Shl
-    + std::ops::Shr
-{
-    fn from_u128(value: u128) -> Self;
-    fn into_u128(self) -> u128;
-}
-
-macro_rules! impl_unsigned {
-    ($($ty:ty),*) => {
-        $(
-            impl UIntegerLimits for $ty {
-                const MAX: u128 = <$ty>::MAX as u128;
-                const MIN: u128 = <$ty>::MIN as u128;
-
-            }
-
-            impl UInteger for $ty {
-                #[inline(always)]
-                fn from_u128(value: u128) -> Self {
-                    #[cfg(debug_assertions)]
-                    {
-                        assert!(value <= <$ty>::MAX as u128, "Value too large for {}", stringify!($ty));
-                    }
-
-                    value as Self
-                }
-
-                #[inline(always)]
-                fn into_u128(self) -> u128 {
-                    self as u128
-                }
-            }
-        )*
-    };
-}
-
-impl_unsigned!(u8, u16, u32, u64, u128);
-
 pub trait Behavior: Copy + 'static {
-    fn add<T: UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T;
-    fn sub<T: UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T;
-    fn mul<T: UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T;
-    fn div<T: UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T;
-    fn rem<T: UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T;
-    fn bitand<T: UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T;
-    fn bitor<T: UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T;
-    fn bitxor<T: UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T;
-    fn shl<T: UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T;
-    fn shr<T: UInteger>(lhs: T, rhs: T, min: u128, max: u128) -> T;
+    // Binary Ops
+    fn add<T: Add<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Add<Output = num::Saturating<T>>;
+    fn sub<T: Sub<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Sub<Output = num::Saturating<T>>;
+    fn mul<T: Mul<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Mul<Output = num::Saturating<T>>;
+    fn div<T: Div<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Div<Output = num::Saturating<T>>;
+    fn rem<T: Rem<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: Rem<Output = num::Saturating<T>>;
+    fn bitand<T: BitAnd<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: BitAnd<Output = num::Saturating<T>>;
+    fn bitor<T: BitOr<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: BitOr<Output = num::Saturating<T>>;
+    fn bitxor<T: BitXor<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: BitXor<Output = num::Saturating<T>>;
+    // fn shl<T: Shl<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    // where
+    //     T::Output: Eq + Ord,
+    //     num::Saturating<T>: Shl<Output = num::Saturating<T>>;
+    // fn shr<T: Shr<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    // where
+    //     T::Output: Eq + Ord,
+    //     num::Saturating<T>: Shr<Output = num::Saturating<T>>;
+    // Unary Ops
+    fn neg<T: std::ops::Neg<Output = T>>(value: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: std::ops::Neg<Output = num::Saturating<T>>;
+    fn not<T: std::ops::Not<Output = T>>(value: T, min: T::Output, max: T::Output) -> T::Output
+    where
+        T::Output: Eq + Ord,
+        num::Saturating<T>: std::ops::Not<Output = num::Saturating<T>>;
+}
+
+pub trait InherentLimits<T>: 'static {
+    const MIN: T;
+    const MAX: T;
 }
 
 pub trait InherentBehavior: 'static {
