@@ -240,7 +240,6 @@ pub trait InherentBehavior: 'static {
 
 #[cfg(test)]
 mod tests {
-    use crate::prelude::*;
 
     // #[test]
     // fn test_enum_simple() {

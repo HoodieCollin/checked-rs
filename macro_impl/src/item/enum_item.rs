@@ -5,8 +5,8 @@ use quote::ToTokens;
 use syn::{parse::Parse, parse_quote};
 
 use crate::params::{
-    kw, BehaviorArg, DerivedTraits, NumberArg, NumberKind, NumberRangeArg, NumberValue,
-    NumberValueRange, NumberValueRangeSet, Params, SemiOrComma, StrictNumberRangeArg,
+    kw, BehaviorArg, DerivedTraits, NumberArg, NumberArgRange, NumberKind, NumberValue,
+    NumberValueRange, NumberValueRangeSet, Params, SemiOrComma, StrictNumberArgRange,
 };
 
 pub struct ClampedEnumItem {
@@ -28,7 +28,7 @@ pub struct ClampedEnumItem {
     pub enum_token: syn::Token![enum],
     pub ident: syn::Ident,
     pub range_bracket: Option<syn::token::Bracket>,
-    pub value_range: Option<NumberRangeArg>,
+    pub value_range: Option<NumberArgRange>,
     pub brace: syn::token::Brace,
     pub variants: syn::punctuated::Punctuated<ClampedEnumVariant, syn::Token![,]>,
 }
@@ -483,11 +483,11 @@ pub enum ClampedEnumVariantField {
     },
     Ranges {
         paren: syn::token::Paren,
-        values: syn::punctuated::Punctuated<NumberRangeArg, syn::Token![,]>,
+        values: syn::punctuated::Punctuated<NumberArgRange, syn::Token![,]>,
     },
     ClampedEnum {
         bracket: Option<syn::token::Bracket>,
-        value_range: Option<StrictNumberRangeArg>,
+        value_range: Option<StrictNumberArgRange>,
         brace: syn::token::Brace,
         variants: syn::punctuated::Punctuated<ClampedEnumVariant, syn::Token![,]>,
     },
@@ -500,8 +500,8 @@ impl Parse for ClampedEnumVariantField {
             let paren = syn::parenthesized!(content in input);
             let fork = content.fork();
 
-            if fork.parse::<NumberRangeArg>().is_ok() {
-                let values = content.parse_terminated(NumberRangeArg::parse, syn::Token![,])?;
+            if fork.parse::<NumberArgRange>().is_ok() {
+                let values = content.parse_terminated(NumberArgRange::parse, syn::Token![,])?;
                 Ok(Self::Ranges { paren, values })
             } else {
                 let values = content.parse_terminated(NumberArg::parse, syn::Token![,])?;
@@ -510,7 +510,7 @@ impl Parse for ClampedEnumVariantField {
         } else if input.peek(syn::token::Bracket) {
             let content;
             let bracket = syn::bracketed!(content in input);
-            let value_range: StrictNumberRangeArg = content.parse()?;
+            let value_range: StrictNumberArgRange = content.parse()?;
 
             if value_range.0.start.is_none() || value_range.0.end.is_none() {
                 return Err(input.error("Expected a range with both a start and an end"));
