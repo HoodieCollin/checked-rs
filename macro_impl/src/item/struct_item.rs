@@ -1,9 +1,12 @@
 use syn::{parse::Parse, parse_quote};
 
 use crate::params::{
-    kw, AsSoftOrHard, BehaviorArg, DerivedTraits, NumberArg, NumberArgRange, NumberKind, Params,
-    SemiOrComma,
+    kw, AsSoftOrHard, BehaviorArg, DerivedTraits, NumberArg, NumberKind, Params, SemiOrComma,
 };
+
+pub mod field;
+
+pub use field::*;
 
 pub struct ClampedStructItem {
     pub pound: syn::Token![#],
@@ -157,21 +160,5 @@ impl ClampedStructItem {
             upper_limit,
             full_coverage: true,
         }
-    }
-}
-
-pub struct ClampedStructField {
-    #[allow(dead_code)]
-    paren: syn::token::Paren,
-    pub ranges: syn::punctuated::Punctuated<NumberArgRange, syn::Token![,]>,
-}
-
-impl Parse for ClampedStructField {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let content;
-        let paren = syn::parenthesized!(content in input);
-
-        let ranges = content.parse_terminated(NumberArgRange::parse, syn::Token![,])?;
-        Ok(Self { paren, ranges })
     }
 }
