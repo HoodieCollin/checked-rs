@@ -1,10 +1,10 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::params::{attr_params::AttrParams, BehaviorArg, NumberArg, NumberKind};
+use crate::params::{BehaviorArg, NumberArg, NumberKind, Params};
 
-pub fn define_guard(name: &syn::Ident, guard_name: &syn::Ident, attr: &AttrParams) -> TokenStream {
-    let integer = &attr.integer;
+pub fn define_guard(name: &syn::Ident, guard_name: &syn::Ident, params: &Params) -> TokenStream {
+    let integer = params.integer;
 
     quote! {
         pub struct #guard_name<'a>(#integer, &'a mut #name);
@@ -89,8 +89,8 @@ pub fn define_guard(name: &syn::Ident, guard_name: &syn::Ident, attr: &AttrParam
     }
 }
 
-pub fn impl_deref(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
-    let integer = &attr.integer;
+pub fn impl_deref(name: &syn::Ident, params: &Params) -> TokenStream {
+    let integer = params.integer;
 
     quote! {
         impl std::ops::Deref for #name {
@@ -111,11 +111,11 @@ pub fn impl_deref(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
     }
 }
 
-pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
-    let integer = &attr.integer;
+pub fn impl_conversions(name: &syn::Ident, params: &Params) -> TokenStream {
+    let integer = params.integer;
     let mut conversions = Vec::with_capacity(24);
 
-    if attr.is_u128_or_smaller() {
+    if params.is_u128_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for u128 {
                 #[inline(always)]
@@ -126,7 +126,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if matches!(attr.kind(), NumberKind::U128) {
+    if matches!(params.integer, NumberKind::U128) {
         conversions.push(quote! {
             impl From<u128> for #name {
                 #[inline(always)]
@@ -137,7 +137,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_usize_or_smaller() {
+    if params.is_usize_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for usize {
                 #[inline(always)]
@@ -148,7 +148,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_usize_or_larger() {
+    if params.is_usize_or_larger() {
         conversions.push(quote! {
             impl From<usize> for #name {
                 #[inline(always)]
@@ -159,7 +159,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_u64_or_smaller() {
+    if params.is_u64_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for u64 {
                 #[inline(always)]
@@ -170,7 +170,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_u64_or_larger() {
+    if params.is_u64_or_larger() {
         conversions.push(quote! {
             impl From<u64> for #name {
                 #[inline(always)]
@@ -181,7 +181,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_u32_or_smaller() {
+    if params.is_u32_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for u32 {
                 #[inline(always)]
@@ -192,7 +192,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_u32_or_larger() {
+    if params.is_u32_or_larger() {
         conversions.push(quote! {
             impl From<u32> for #name {
                 #[inline(always)]
@@ -203,7 +203,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_u16_or_smaller() {
+    if params.is_u16_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for u16 {
                 #[inline(always)]
@@ -214,7 +214,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_u16_or_larger() {
+    if params.is_u16_or_larger() {
         conversions.push(quote! {
             impl From<u16> for #name {
                 #[inline(always)]
@@ -225,7 +225,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if matches!(attr.kind(), NumberKind::U8) {
+    if matches!(params.integer, NumberKind::U8) {
         conversions.push(quote! {
             impl From<#name> for u8 {
                 #[inline(always)]
@@ -236,7 +236,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_i128_or_smaller() {
+    if params.is_i128_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for i128 {
                 #[inline(always)]
@@ -247,7 +247,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if matches!(attr.kind(), NumberKind::U128) {
+    if matches!(params.integer, NumberKind::U128) {
         conversions.push(quote! {
             impl From<u128> for #name {
                 #[inline(always)]
@@ -258,7 +258,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_isize_or_smaller() {
+    if params.is_isize_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for isize {
                 #[inline(always)]
@@ -269,7 +269,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_isize_or_larger() {
+    if params.is_isize_or_larger() {
         conversions.push(quote! {
             impl From<usize> for #name {
                 #[inline(always)]
@@ -280,7 +280,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_i64_or_smaller() {
+    if params.is_i64_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for i64 {
                 #[inline(always)]
@@ -291,7 +291,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_i64_or_larger() {
+    if params.is_i64_or_larger() {
         conversions.push(quote! {
             impl From<u64> for #name {
                 #[inline(always)]
@@ -302,7 +302,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_i32_or_smaller() {
+    if params.is_i32_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for i32 {
                 #[inline(always)]
@@ -313,7 +313,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_i32_or_larger() {
+    if params.is_i32_or_larger() {
         conversions.push(quote! {
             impl From<u32> for #name {
                 #[inline(always)]
@@ -324,7 +324,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_i16_or_smaller() {
+    if params.is_i16_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for i16 {
                 #[inline(always)]
@@ -335,7 +335,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_i16_or_larger() {
+    if params.is_i16_or_larger() {
         conversions.push(quote! {
             impl From<u16> for #name {
                 #[inline(always)]
@@ -346,7 +346,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if matches!(attr.kind(), NumberKind::I8) {
+    if matches!(params.integer, NumberKind::I8) {
         conversions.push(quote! {
             impl From<#name> for i8 {
                 #[inline(always)]
@@ -357,7 +357,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_signed() {
+    if params.is_signed() {
         conversions.push(quote! {
             impl From<i8> for #name {
                 #[inline(always)]
@@ -428,8 +428,8 @@ pub fn impl_self_cmp(name: &syn::Ident) -> TokenStream {
     }
 }
 
-pub fn impl_other_eq(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
-    let integer = &attr.integer;
+pub fn impl_other_eq(name: &syn::Ident, params: &Params) -> TokenStream {
+    let integer = params.integer;
 
     quote! {
         impl std::cmp::PartialEq<#integer> for #name
@@ -450,8 +450,8 @@ pub fn impl_other_eq(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
     }
 }
 
-pub fn impl_other_compare(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
-    let integer = &attr.integer;
+pub fn impl_other_compare(name: &syn::Ident, params: &Params) -> TokenStream {
+    let integer = params.integer;
 
     quote! {
         impl std::cmp::PartialOrd<#integer> for #name
@@ -474,23 +474,23 @@ pub fn impl_other_compare(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
 
 pub fn impl_binary_op(
     name: &syn::Ident,
-    attr: &AttrParams,
+    params: &Params,
     trait_name: syn::Ident,
     method_name: syn::Ident,
     behavior: &BehaviorArg,
     lower: Option<NumberArg>,
     upper: Option<NumberArg>,
 ) -> TokenStream {
-    let kind = attr.kind();
-    let integer = &attr.integer;
+    let kind = params.integer;
+    let integer = params.integer;
 
     let lower = lower
         .map(|n| n.into_literal_as_tokens(kind))
-        .unwrap_or(attr.lower_limit_token());
+        .unwrap_or(params.lower_limit_token_or_default());
 
     let upper = upper
         .map(|n| n.into_literal_as_tokens(kind))
-        .unwrap_or(attr.upper_limit_token());
+        .unwrap_or(params.upper_limit_token_or_default());
 
     let assign_trait_name = format_ident!("{}Assign", trait_name);
     let assign_method_name = format_ident!("{}_assign", method_name);

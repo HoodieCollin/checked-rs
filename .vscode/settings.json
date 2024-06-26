@@ -1,9 +1,14 @@
 {
   "cSpell.words": [
     "bitand",
+    "evalexpr",
     "Hasher",
     "idents",
+    "impls",
+    "oneofs",
+    "rangemap",
     "Repr",
+    "rhai",
     "struct",
     "thiserror",
     "uinteger",

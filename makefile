@@ -1,5 +1,5 @@
 
-.PHONY: release-patch release-minor release-major publish-all publish-macros publish-macro-impl bump-patch bump-minor bump-major check-dirty
+.PHONY: release-patch release-minor release-major
 
 # Command to count the number of changes
 CHECK_DIRTY_CMD = expr $(shell git status --porcelain 2>/dev/null | egrep "^(M| M)" | wc -l)
@@ -10,6 +10,8 @@ release-minor: bump-minor publish-all
 
 release-major: bump-major publish-all
 
+.PHONY: publish-all publish-macros publish-macro-impl
+
 publish-all: publish-macros
 	cargo publish -p checked-rs
 
@@ -18,6 +20,8 @@ publish-macros: publish-macro-impl
 
 publish-macro-impl:
 	cargo publish -p checked-rs-macro-impl
+
+.PHONY: bump-patch bump-minor bump-major check-dirty
 
 bump-patch: check-dirty
 	cargo set-version -p checked-rs --bump patch
@@ -39,3 +43,13 @@ bump-major: check-dirty
 
 check-dirty:
 	@dirty_count=$$( $(CHECK_DIRTY_CMD) ); if [ $$dirty_count -gt 0 ]; then echo 'There are outstanding changes. Please commit or stash them before bumping the version'; exit 1; else echo "Repository is clean"; fi
+
+.PHONY: fix format fix-format
+
+fix:
+	cargo fix --allow-dirty --all
+
+format:
+	cargo fmt --all
+
+fix-format: fix format

@@ -167,10 +167,10 @@ mod reexports {
 pub mod prelude {
     pub use crate::reexports::*;
 
-    pub use crate::clamp::*;
-    pub use crate::commit_or_bail;
-    pub use crate::view::*;
-    pub use crate::{Behavior, InherentBehavior, InherentLimits};
+    pub use crate::{
+        clamp::*, commit_or_bail, view::*, Behavior, InherentBehavior, InherentLimits,
+    };
+
     pub use checked_rs_macros::clamped;
 }
 
@@ -228,8 +228,10 @@ pub trait Behavior: Copy + 'static {
 }
 
 pub trait InherentLimits<T>: 'static {
-    const MIN: T;
-    const MAX: T;
+    const MIN: Self;
+    const MAX: Self;
+    const MIN_INT: T;
+    const MAX_INT: T;
 }
 
 pub trait InherentBehavior: 'static {
@@ -240,53 +242,106 @@ pub trait InherentBehavior: 'static {
 mod tests {
     use crate::prelude::*;
 
-    #[clamped(u16, default = 600, behavior = Saturating, lower = 100, upper = 600)]
-    #[derive(Debug, Clone, Copy)]
-    enum ResponseCode {
-        #[eq(100)]
-        Continue,
-        #[eq(200)]
-        Success,
-        #[eq(300)]
-        Redirection,
-        #[eq(400)]
-        BadRequest,
-        #[eq(404)]
-        NotFound,
-        #[range(500..=599)]
-        ServerError,
-        #[other]
-        Unknown,
-        #[eq(600)]
-        Invalid,
-    }
+    // #[test]
+    // fn test_enum_simple() {
+    //     clamped! {
+    //         #[usize]
+    //         enum DoubleSentinel {
+    //             Zero(0),
+    //             Valid(..),
+    //             Invalid(usize::MAX),
+    //         }
+    //     }
+    // }
 
-    #[test]
-    fn test_response_code() {
-        let mut code = ResponseCode::new_success();
-        assert!(code.is_success());
+    // #[test]
+    // fn test_enum_non_comprehensive() {
+    //     clamped! {
+    //         #[usize]
+    //         enum DoubleSentinel {
+    //             Ten(10),
+    //             Twenty(20),
+    //             Thirty(30),
+    //         }
+    //     }
+    // }
 
-        code += 100;
-        assert!(code.is_redirection());
+    // #[test]
+    // fn test_enum_multiple_exacts() {
+    //     clamped! {
+    //         #[usize]
+    //         enum SpecificValues {
+    //             OneTwoOrSeven(1, 2, 7),
+    //             AnythingElse(..),
+    //         }
+    //     }
+    // }
 
-        code += u16::MAX;
-        assert!(code.is_invalid());
+    // #[test]
+    // fn test_enum_multiple_ranges() {
+    //     clamped! {
+    //         #[usize]
+    //         enum HundredToThousand {
+    //             Valid(..),
+    //             Invalid(..100, 1000..)
+    //         }
+    //     }
+    // }
 
-        code -= 10;
-        assert!(code.is_server_error());
+    // #[test]
+    // fn test_enum_nested() {
+    //     clamped! {
+    //         #[usize]
+    //         enum ResponseCode {
+    //             Success[200..300] {
+    //                 Okay(200),
+    //                 Created(201),
+    //                 Accepted(202),
+    //                 Unknown(..),
+    //             },
+    //             Error {
+    //                 Client[400..500] {
+    //                     BadRequest(400),
+    //                     Unauthorized(401),
+    //                     PaymentRequired(402),
+    //                     Forbidden(403),
+    //                     NotFound(404),
+    //                     Unknown(..)
+    //                 },
+    //                 Server[500..600] {
+    //                     Internal(500),
+    //                     NotImplemented(501),
+    //                     BadGateway(502),
+    //                     ServiceUnavailable(503),
+    //                     GatewayTimeout(504),
+    //                     Unknown(..)
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
-        let mut g = code.modify();
+    // #[test]
+    // fn test_struct_soft() {
+    //     clamped! {
+    //         #[usize as Soft]
+    //         struct TenOrLess(..=10);
+    //     }
+    // }
 
-        *g = 111;
+    // #[test]
+    // fn test_struct_hard() {
+    //     clamped! {
+    //         #[usize as Hard]
+    //         struct TenOrMore(10..);
+    //     }
+    // }
 
-        assert!(g.commit().is_ok());
-        assert!(code.is_unknown());
-    }
-
-    #[test]
-    fn test_from_str() -> Result<()> {
-        let code: ResponseCode = "200".parse()?;
-        assert!(code.is_success());
-        Ok(())
-    }
+    // #[test]
+    // fn test_struct_multiple_ranges() {
+    //     clamped! {
+    //         #[usize as Hard]
+    //         struct LessThanTenOrBetween999And2000(..10, 1000..2000);
+    //     }
+    // }
 }

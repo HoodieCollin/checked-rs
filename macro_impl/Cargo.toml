@@ -11,6 +11,9 @@
 [dependencies]
   convert_case = "0.6.0"
 
+  [dependencies.anyhow]
+    workspace = true
+
   [dependencies.quote]
     workspace = true
 
@@ -20,5 +23,17 @@
   [dependencies.proc-macro2]
     workspace = true
 
-  [dependencies.proc-macro-error]
+  [dependencies.num-format]
     workspace = true
+
+  [dependencies.rhai]
+    workspace = true
+
+  [dependencies.paste]
+    workspace = true
+
+  [dependencies.rangemap]
+    workspace = true
+
+[dev-dependencies]
+  prettyplease = "0.2"
