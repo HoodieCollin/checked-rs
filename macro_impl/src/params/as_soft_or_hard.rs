@@ -49,3 +49,12 @@ impl ToTokens for AsSoftOrHard {
         }
     }
 }
+
+impl std::fmt::Debug for AsSoftOrHard {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Soft { .. } => write!(f, "Soft"),
+            Self::Hard { .. } => write!(f, "Hard"),
+        }
+    }
+}

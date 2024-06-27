@@ -52,17 +52,35 @@ pub mod kw {
     syn::custom_keyword!(MAX);
 }
 
+#[derive(Clone)]
 pub struct Params {
     pub integer: NumberKind,
     pub derived_traits: Option<DerivedTraits>,
     pub vis: syn::Visibility,
     pub ident: syn::Ident,
     pub as_soft_or_hard: Option<AsSoftOrHard>,
-    pub default_val: Option<NumberArg>,
-    pub behavior_val: BehaviorArg,
-    pub lower_limit: Option<NumberArg>,
-    pub upper_limit: Option<NumberArg>,
+    pub behavior: BehaviorArg,
+    pub default_val: Option<NumberValue>,
+    pub lower_limit_val: NumberValue,
+    pub upper_limit_val: NumberValue,
     pub full_coverage: bool,
+}
+
+impl std::fmt::Debug for Params {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Params")
+            .field("integer", &self.integer)
+            .field("derived_traits", &self.derived_traits)
+            .field("vis", &self.vis.to_token_stream().to_string())
+            .field("ident", &self.ident)
+            .field("as_soft_or_hard", &self.as_soft_or_hard)
+            .field("behavior", &self.behavior)
+            .field("default_val", &self.default_val)
+            .field("lower_limit", &self.lower_limit_val)
+            .field("upper_limit", &self.upper_limit_val)
+            .field("full_coverage", &self.full_coverage)
+            .finish()
+    }
 }
 
 impl Params {
@@ -82,48 +100,14 @@ impl Params {
         format_ident!("{}{}", other_name, self.value_ident())
     }
 
-    /// Interpret the lower limit value as `NumberValue`.
-    pub fn lower_limit_value(&self) -> Option<NumberValue> {
-        self.lower_limit
-            .as_ref()
-            .map(|arg| arg.into_value(self.integer))
-    }
-
-    pub fn lower_limit_value_or_default(&self) -> NumberValue {
-        self.lower_limit_value()
-            .unwrap_or_else(|| NumberArg::new_min_constant(self.integer).into_value(self.integer))
-    }
-
     /// Output the lower limit value as a bare literal in a token stream.
-    pub fn lower_limit_token(&self) -> Option<TokenStream> {
-        Some(syn::parse_str(&self.lower_limit_value().map(|val| val.to_string())?).unwrap())
-    }
-
-    pub fn lower_limit_token_or_default(&self) -> TokenStream {
-        self.lower_limit_token()
-            .unwrap_or_else(|| self.lower_limit_value_or_default().into_token_stream())
-    }
-
-    /// Interpret the upper limit value as `NumberValue`.
-    pub fn upper_limit_value(&self) -> Option<NumberValue> {
-        self.upper_limit
-            .as_ref()
-            .map(|arg| arg.into_value(self.integer))
-    }
-
-    pub fn upper_limit_value_or_default(&self) -> NumberValue {
-        self.upper_limit_value()
-            .unwrap_or_else(|| NumberArg::new_max_constant(self.integer).into_value(self.integer))
+    pub fn lower_limit_token(&self) -> TokenStream {
+        syn::parse_str(&self.lower_limit_val.to_string()).unwrap()
     }
 
     /// Output the upper limit value as a bare literal in a token stream.
-    pub fn upper_limit_token(&self) -> Option<TokenStream> {
-        Some(syn::parse_str(&self.upper_limit_value().map(|val| val.to_string())?).unwrap())
-    }
-
-    pub fn upper_limit_token_or_default(&self) -> TokenStream {
-        self.upper_limit_token()
-            .unwrap_or_else(|| self.upper_limit_value_or_default().into_token_stream())
+    pub fn upper_limit_token(&self) -> TokenStream {
+        syn::parse_str(&self.upper_limit_val.to_string()).unwrap()
     }
 
     /// Validate that an arbitrary value is within the lower and upper limit.
@@ -132,8 +116,8 @@ impl Params {
         ast: &T,
         value: NumberValue,
     ) -> syn::Result<()> {
-        let lower = self.lower_limit_value_or_default();
-        let upper = self.upper_limit_value_or_default();
+        let lower = self.lower_limit_val;
+        let upper = self.upper_limit_val;
 
         if value < lower {
             return Err(syn::Error::new(

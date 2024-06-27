@@ -35,3 +35,12 @@ impl ToTokens for BehaviorArg {
         });
     }
 }
+
+impl std::fmt::Debug for BehaviorArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Saturating(..) => write!(f, "Saturating"),
+            Self::Panicking(..) => write!(f, "Panicking"),
+        }
+    }
+}

@@ -208,15 +208,6 @@ pub trait Behavior: Copy + 'static {
     where
         T::Output: Eq + Ord,
         num::Saturating<T>: BitXor<Output = num::Saturating<T>>;
-    // fn shl<T: Shl<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
-    // where
-    //     T::Output: Eq + Ord,
-    //     num::Saturating<T>: Shl<Output = num::Saturating<T>>;
-    // fn shr<T: Shr<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
-    // where
-    //     T::Output: Eq + Ord,
-    //     num::Saturating<T>: Shr<Output = num::Saturating<T>>;
-    // Unary Ops
     fn neg<T: std::ops::Neg<Output = T>>(value: T, min: T::Output, max: T::Output) -> T::Output
     where
         T::Output: Eq + Ord,
@@ -240,6 +231,7 @@ pub trait InherentBehavior: 'static {
 
 #[cfg(test)]
 mod tests {
+    use crate::prelude::*;
 
     // #[test]
     // fn test_enum_simple() {
@@ -257,7 +249,7 @@ mod tests {
     // fn test_enum_non_comprehensive() {
     //     clamped! {
     //         #[usize]
-    //         enum DoubleSentinel {
+    //         enum TenTwentyThirty {
     //             Ten(10),
     //             Twenty(20),
     //             Thirty(30),
@@ -287,38 +279,38 @@ mod tests {
     //     }
     // }
 
-    // #[test]
-    // fn test_enum_nested() {
-    //     clamped! {
-    //         #[usize]
-    //         enum ResponseCode {
-    //             Success[200..300] {
-    //                 Okay(200),
-    //                 Created(201),
-    //                 Accepted(202),
-    //                 Unknown(..),
-    //             },
-    //             Error {
-    //                 Client[400..500] {
-    //                     BadRequest(400),
-    //                     Unauthorized(401),
-    //                     PaymentRequired(402),
-    //                     Forbidden(403),
-    //                     NotFound(404),
-    //                     Unknown(..)
-    //                 },
-    //                 Server[500..600] {
-    //                     Internal(500),
-    //                     NotImplemented(501),
-    //                     BadGateway(502),
-    //                     ServiceUnavailable(503),
-    //                     GatewayTimeout(504),
-    //                     Unknown(..)
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
+    #[test]
+    fn test_enum_nested() {
+        clamped! {
+            #[usize]
+            enum ResponseCode {
+                Success[200..300] {
+                    Okay(200),
+                    Created(201),
+                    Accepted(202),
+                    Unknown(..),
+                },
+                Error {
+                    Client[400..500] {
+                        BadRequest(400),
+                        Unauthorized(401),
+                        PaymentRequired(402),
+                        Forbidden(403),
+                        NotFound(404),
+                        Unknown(..)
+                    },
+                    Server[500..600] {
+                        Internal(500),
+                        NotImplemented(501),
+                        BadGateway(502),
+                        ServiceUnavailable(503),
+                        GatewayTimeout(504),
+                        Unknown(..)
+                    }
+                }
+            }
+        }
+    }
 
     // #[test]
     // fn test_struct_soft() {

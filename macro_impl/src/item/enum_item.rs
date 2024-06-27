@@ -3,9 +3,12 @@ use std::collections::HashSet;
 use proc_macro2::Span;
 use syn::{parse::Parse, parse_quote};
 
-use crate::params::{
-    kw, BehaviorArg, DerivedTraits, NumberArg, NumberArgRange, NumberKind, NumberValue,
-    NumberValueRange, NumberValueRangeSet, Params, SemiOrComma,
+use crate::{
+    params::{
+        kw, BehaviorArg, DerivedTraits, NumberArg, NumberArgRange, NumberKind, NumberValue,
+        NumberValueRange, Params, SemiOrComma,
+    },
+    range_seq::RangeSeq,
 };
 
 pub mod field;
@@ -27,7 +30,7 @@ pub struct ClampedEnumItem {
     pub default_semi: Option<SemiOrComma>,
     pub behavior_kw: kw::behavior,
     pub behavior_eq: syn::Token![=],
-    pub behavior_val: BehaviorArg,
+    pub behavior: BehaviorArg,
     pub behavior_semi: Option<SemiOrComma>,
     pub vis: Option<syn::Visibility>,
     pub enum_token: syn::Token![enum],
@@ -54,7 +57,7 @@ impl Parse for ClampedEnumItem {
         let mut default_semi = None;
         let mut behavior_kw = None;
         let mut behavior_eq = None;
-        let mut behavior_val = None;
+        let mut behavior = None;
         let mut behavior_semi = None;
         let mut vis = None;
 
@@ -85,7 +88,7 @@ impl Parse for ClampedEnumItem {
                 if content.peek(kw::behavior) {
                     behavior_kw = Some(content.parse()?);
                     behavior_eq = Some(content.parse()?);
-                    behavior_val = Some(content.parse()?);
+                    behavior = Some(content.parse()?);
                     behavior_semi = if content.peek(syn::Token![;]) {
                         Some(content.parse()?)
                     } else {
@@ -127,7 +130,7 @@ impl Parse for ClampedEnumItem {
             default_semi,
             behavior_kw: behavior_kw.unwrap_or_else(|| parse_quote!(behavior)),
             behavior_eq: behavior_eq.unwrap_or_else(|| parse_quote!(=)),
-            behavior_val: behavior_val.unwrap_or_else(|| parse_quote!(Panic)),
+            behavior: behavior.unwrap_or_else(|| parse_quote!(Panic)),
             behavior_semi,
             vis,
             enum_token,
@@ -151,16 +154,15 @@ impl ClampedEnumItem {
 
     // returns true if the coverage is complete
     pub fn check_coverage<'a, 'b: 'a>(
-        out_exacts: Option<&'a mut HashSet<NumberValue>>,
-        out_ranges: Option<&'a mut NumberValueRangeSet>,
+        parent_exacts: Option<&'a mut HashSet<NumberValue>>,
+        parent_range_seq: Option<&'a mut RangeSeq>,
         parent_lower_limit: Option<NumberValue>,
         parent_upper_limit: Option<NumberValue>,
         kind: NumberKind,
         variants: impl Iterator<Item = &'b ClampedEnumVariant>,
     ) -> syn::Result<bool> {
-        let mut has_full_range = false;
-        let mut exacts = HashSet::with_capacity(64);
-        let mut ranges = NumberValueRangeSet::new_with_step_fns();
+        let mut exacts = HashSet::new();
+        let mut outer_range_seq = RangeSeq::new(kind);
 
         for variant in variants {
             match &variant.field {
@@ -195,44 +197,8 @@ impl ClampedEnumItem {
                     }
                 }
                 ClampedEnumVariantField::Ranges { values, .. } => {
-                    if values.len() == 1 {
-                        let range = values.first().unwrap();
-
-                        if range.is_full_range() {
-                            if has_full_range {
-                                return Err(syn::Error::new(
-                                    Span::call_site(),
-                                    "Multiple full ranges in clamped enum",
-                                ));
-                            } else {
-                                has_full_range = true;
-                                continue;
-                            }
-                        }
-
-                        // intentionally fall through to looping over the ranges
-                    }
-
                     for range in values.iter() {
-                        if range.is_full_range() {
-                            return Err(syn::Error::new(
-                                Span::call_site(),
-                                "Full ranges cannot be mixed with other ranges in the same variant of within a clamped enum",
-                            ));
-                        }
-
-                        let std_range = range
-                            .to_value_range(kind, parent_lower_limit, parent_upper_limit)?
-                            .to_std_inclusive_range(None, None)?;
-
-                        if ranges.overlaps(&std_range) {
-                            return Err(syn::Error::new(
-                                Span::call_site(),
-                                format!("Overlapping range in clamped enum {}", range),
-                            ));
-                        } else {
-                            ranges.insert(std_range);
-                        }
+                        outer_range_seq.insert(range.to_value_range(kind)?)?;
                     }
                 }
                 ClampedEnumVariantField::ClampedEnum {
@@ -242,39 +208,17 @@ impl ClampedEnumItem {
                 } => {
                     let mut lower_limit = None;
                     let mut upper_limit = None;
-                    let mut inner_exacts = HashSet::with_capacity(64);
-                    let mut inner_ranges = NumberValueRangeSet::new_with_step_fns();
+                    let mut inner_exacts = HashSet::new();
+                    let mut inner_range_seq = RangeSeq::new(kind);
 
                     if let Some(range) = value_range {
-                        let std_range = range
-                            .to_value_range(kind, parent_lower_limit, parent_upper_limit)?
-                            .to_std_inclusive_range(None, None)?;
-
-                        if ranges.overlaps(&std_range) {
-                            return Err(syn::Error::new(
-                                Span::call_site(),
-                                format!("Overlapping range in clamped enum {}", range),
-                            ));
-                        } else {
-                            ranges.insert(std_range);
-                            lower_limit = range
-                                .0
-                                .start
-                                .as_ref()
-                                .map(|val| val.into_value(kind))
-                                .or(parent_lower_limit);
-                            upper_limit = range
-                                .0
-                                .end
-                                .as_ref()
-                                .map(|val| val.into_value(kind))
-                                .or(parent_upper_limit);
-                        }
+                        lower_limit = Some(range.first_val(kind));
+                        upper_limit = Some(range.last_val(kind));
                     }
 
                     let full_coverage = Self::check_coverage(
                         Some(&mut inner_exacts),
-                        Some(&mut inner_ranges),
+                        Some(&mut inner_range_seq),
                         lower_limit,
                         upper_limit,
                         kind,
@@ -284,47 +228,35 @@ impl ClampedEnumItem {
                     if let Some(val) = exacts.intersection(&inner_exacts).next() {
                         return Err(syn::Error::new(
                             Span::call_site(),
-                            format!("Duplicate value in clamped enum {}", val),
+                            format!("Nested[1]: Duplicate value in clamped enum {}", val),
                         ));
                     } else {
                         exacts.extend(inner_exacts);
                     }
 
                     if full_coverage {
-                        let full_inner_range =
-                            NumberValueRange::from_values(lower_limit, upper_limit, kind)?
-                                .to_std_inclusive_range(None, None)?;
-
-                        if ranges.overlaps(&full_inner_range) {
-                            return Err(syn::Error::new(
-                                Span::call_site(),
-                                format!("Overlapping range in clamped enum {:?}", full_inner_range),
-                            ));
-                        } else {
-                            ranges.insert(full_inner_range);
-                        }
-                    } else if let Some(range) = ranges.intersection(&inner_ranges).next() {
-                        return Err(syn::Error::new(
-                            Span::call_site(),
-                            format!("Overlapping range in clamped enum {:?}", range),
-                        ));
+                        outer_range_seq.insert(NumberValueRange::new_inclusive(
+                            lower_limit,
+                            upper_limit,
+                            kind,
+                        )?)?;
                     } else {
-                        for range in inner_ranges.iter() {
-                            ranges.insert(range.clone());
+                        for range in inner_range_seq.ranges() {
+                            outer_range_seq.insert(range)?;
                         }
                     }
                 }
             }
         }
 
-        if let Some(out_exacts) = out_exacts {
-            if let Some(val) = out_exacts.intersection(&exacts).next() {
+        if let Some(parent_exacts) = parent_exacts {
+            if let Some(val) = parent_exacts.intersection(&exacts).next() {
                 return Err(syn::Error::new(
                     Span::call_site(),
-                    format!("Duplicate value in clamped enum {}", val),
+                    format!("Outer: Duplicate value in clamped enum {}", val),
                 ));
             } else {
-                out_exacts.extend(exacts);
+                parent_exacts.extend(exacts);
             }
         }
 
@@ -334,91 +266,112 @@ impl ClampedEnumItem {
         let full_end = parent_upper_limit
             .unwrap_or_else(|| NumberArg::new_max_constant(kind).into_value(kind));
 
-        let full_range = NumberValueRange::from_values(Some(full_start), Some(full_end), kind)?
-            .to_std_inclusive_range(None, None)?;
+        if outer_range_seq.has_full_range() {
+            if let Some(parent_range_seq) = parent_range_seq {
+                let full_range =
+                    NumberValueRange::new_inclusive(Some(full_start), Some(full_end), kind)?;
 
-        if has_full_range {
-            if let Some(out_ranges) = out_ranges {
-                if out_ranges.overlaps(&full_range) {
-                    return Err(syn::Error::new(
-                        Span::call_site(),
-                        format!("Overlapping range in clamped enum {:?}", full_range),
-                    ));
-                } else {
-                    out_ranges.insert(full_range);
-                }
+                parent_range_seq.insert(full_range)?;
             }
 
             return Ok(true);
-        } else {
-            if let Some(out_ranges) = out_ranges {
-                if let Some(range) = out_ranges.intersection(&ranges).next() {
-                    return Err(syn::Error::new(
-                        Span::call_site(),
-                        format!("Overlapping range in clamped enum {:?}", range),
-                    ));
-                }
-
-                for range in ranges.iter() {
-                    out_ranges.insert(range.clone());
-                }
+        } else if let Some(parent_range_seq) = parent_range_seq {
+            for range in outer_range_seq.ranges() {
+                parent_range_seq.insert(range)?;
             }
-
-            return Ok(ranges.gaps(&full_range).next().is_none());
         }
+
+        return Ok(outer_range_seq.has_gaps());
     }
 
-    pub fn limits(&self) -> (Option<NumberArg>, Option<NumberArg>) {
-        let mut parent_lower_limit = None;
-        let mut parent_upper_limit = None;
+    pub fn limits(&self) -> syn::Result<NumberArgRange> {
+        let kind = self.integer;
+        let hard_lower_limit = self.value_range.as_ref().map(|range| range.start_arg(kind));
+        let hard_upper_limit = self.value_range.as_ref().map(|range| range.end_arg(kind));
 
-        if let Some(range) = &self.value_range {
-            parent_lower_limit = range.start.clone();
-            parent_upper_limit = range.end.clone();
+        let (mut lower_limit, mut upper_limit) = NumberArg::LIMITS_INIT.clone();
+
+        for variant in self.variants.iter() {
+            let variant_limits =
+                variant
+                    .field
+                    .limits(kind, hard_lower_limit.clone(), hard_upper_limit.clone())?;
+
+            let start = variant_limits.start_arg(kind);
+            let end = variant_limits.end_arg(kind);
+
+            lower_limit = lower_limit.map_or_else(
+                || Some(start.clone()),
+                |lower_limit| Some(lower_limit.min(&start, kind)),
+            );
+
+            upper_limit = upper_limit.map_or_else(
+                || Some(end.clone()),
+                |upper_limit| Some(upper_limit.max(&end, kind)),
+            );
         }
 
-        self.variants.iter().fold(
-            (parent_lower_limit.clone(), parent_upper_limit.clone()),
-            |acc, variant| {
-                let (start, end) = variant.field.limits(
-                    self.integer,
-                    parent_lower_limit.clone(),
-                    parent_upper_limit.clone(),
-                );
+        if lower_limit.is_none() || upper_limit.is_none() {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "Item::Limits: No values in enum variant field",
+            ));
+        }
 
-                (
-                    acc.0
-                        .map(|lower_limit| lower_limit.min(&start, self.integer))
-                        .or(Some(start)),
-                    acc.1
-                        .map(|upper_limit| upper_limit.max(&end, self.integer))
-                        .or(Some(end)),
-                )
-            },
-        )
+        let lower_limit = lower_limit.unwrap();
+        let upper_limit = upper_limit.unwrap();
+
+        if let Some(hard_lower_limit) = hard_lower_limit.map(|arg| arg.into_value(kind)) {
+            if lower_limit.into_value(kind) < hard_lower_limit {
+                return Err(syn::Error::new(
+                    Span::call_site(),
+                    "Enum variant lower limit is below hard limit",
+                ));
+            }
+        }
+
+        if let Some(hard_upper_limit) = hard_upper_limit.map(|arg| arg.into_value(kind)) {
+            if upper_limit.into_value(kind) > hard_upper_limit {
+                return Err(syn::Error::new(
+                    Span::call_site(),
+                    "Enum variant upper limit is above hard limit",
+                ));
+            }
+        }
+
+        Ok(NumberArgRange::new_inclusive(lower_limit, upper_limit))
     }
 
     pub fn params(&self) -> syn::Result<Params> {
-        let (total_lower_limit, total_upper_limit) = self.limits();
+        let kind = self.integer;
+        let limits = self.limits()?;
 
-        Ok(Params {
-            integer: self.integer,
+        let total_lower_limit = limits.first_val(kind);
+        let total_upper_limit = limits.last_val(kind);
+
+        let mut parent_exacts = HashSet::new();
+        let mut parent_range_seq = RangeSeq::new(kind);
+
+        let this = Params {
+            integer: kind,
             derived_traits: self.derived_traits.clone(),
             vis: self.vis.clone().unwrap_or(syn::Visibility::Inherited),
             ident: self.ident.clone(),
             as_soft_or_hard: None,
-            default_val: self.default_val.clone(),
-            behavior_val: self.behavior_val.clone(),
-            lower_limit: total_lower_limit.clone(),
-            upper_limit: total_upper_limit.clone(),
+            default_val: self.default_val.as_ref().map(|arg| arg.into_value(kind)),
+            behavior: self.behavior.clone(),
+            lower_limit_val: total_lower_limit,
+            upper_limit_val: total_upper_limit,
             full_coverage: Self::check_coverage(
-                None,
-                None,
-                total_lower_limit.map(|arg| arg.into_value(self.integer)),
-                total_upper_limit.map(|arg| arg.into_value(self.integer)),
-                self.integer,
+                Some(&mut parent_exacts),
+                Some(&mut parent_range_seq),
+                Some(total_lower_limit),
+                Some(total_upper_limit),
+                kind,
                 self.variants.iter(),
             )?,
-        })
+        };
+
+        Ok(this)
     }
 }

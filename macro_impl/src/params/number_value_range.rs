@@ -1,30 +1,89 @@
-use std::ops::{RangeFrom, RangeInclusive, RangeToInclusive};
+use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
 use proc_macro2::Span;
-use rangemap::{RangeInclusiveSet, StepFns};
 
-use super::{NumberArg, NumberKind, NumberValue};
-
-pub type NumberValueRangeSet = RangeInclusiveSet<NumberValue, NumberValueStepFns>;
-
-pub struct NumberValueStepFns;
-
-impl StepFns<NumberValue> for NumberValueStepFns {
-    fn add_one(start: &NumberValue) -> NumberValue {
-        start.add_usize(1)
-    }
-
-    fn sub_one(start: &NumberValue) -> NumberValue {
-        start.sub_usize(1)
-    }
-}
+use super::{NumberArg, NumberArgRange, NumberKind, NumberValue};
 
 #[derive(Clone)]
 pub enum NumberValueRange {
     Full(NumberKind),
     From(RangeFrom<NumberValue>),
-    To(RangeToInclusive<NumberValue>),
+    ToExclusive(RangeTo<NumberValue>),
+    ToInclusive(RangeToInclusive<NumberValue>),
+    Exclusive(Range<NumberValue>),
     Inclusive(RangeInclusive<NumberValue>),
+}
+
+impl From<NumberKind> for NumberValueRange {
+    fn from(kind: NumberKind) -> Self {
+        Self::Full(kind)
+    }
+}
+
+impl From<&NumberKind> for NumberValueRange {
+    fn from(kind: &NumberKind) -> Self {
+        Self::Full(*kind)
+    }
+}
+
+impl From<RangeFrom<NumberValue>> for NumberValueRange {
+    fn from(range: RangeFrom<NumberValue>) -> Self {
+        Self::From(range)
+    }
+}
+
+impl From<&RangeFrom<NumberValue>> for NumberValueRange {
+    fn from(range: &RangeFrom<NumberValue>) -> Self {
+        Self::From(range.clone())
+    }
+}
+
+impl From<RangeTo<NumberValue>> for NumberValueRange {
+    fn from(range: RangeTo<NumberValue>) -> Self {
+        Self::ToExclusive(range)
+    }
+}
+
+impl From<&RangeTo<NumberValue>> for NumberValueRange {
+    fn from(range: &RangeTo<NumberValue>) -> Self {
+        Self::ToExclusive(range.clone())
+    }
+}
+
+impl From<RangeToInclusive<NumberValue>> for NumberValueRange {
+    fn from(range: RangeToInclusive<NumberValue>) -> Self {
+        Self::ToInclusive(range)
+    }
+}
+
+impl From<&RangeToInclusive<NumberValue>> for NumberValueRange {
+    fn from(range: &RangeToInclusive<NumberValue>) -> Self {
+        Self::ToInclusive(range.clone())
+    }
+}
+
+impl From<Range<NumberValue>> for NumberValueRange {
+    fn from(range: Range<NumberValue>) -> Self {
+        Self::Exclusive(range)
+    }
+}
+
+impl From<&Range<NumberValue>> for NumberValueRange {
+    fn from(range: &Range<NumberValue>) -> Self {
+        Self::Exclusive(range.clone())
+    }
+}
+
+impl From<RangeInclusive<NumberValue>> for NumberValueRange {
+    fn from(range: RangeInclusive<NumberValue>) -> Self {
+        Self::Inclusive(range)
+    }
+}
+
+impl From<&RangeInclusive<NumberValue>> for NumberValueRange {
+    fn from(range: &RangeInclusive<NumberValue>) -> Self {
+        Self::Inclusive(range.clone())
+    }
 }
 
 impl NumberValueRange {
@@ -45,78 +104,128 @@ impl NumberValueRange {
         Ok(())
     }
 
-    pub fn from_values(
+    pub fn kind(&self) -> NumberKind {
+        match self {
+            Self::Full(kind) => *kind,
+            Self::From(range) => range.start.kind(),
+            Self::ToExclusive(range) => range.end.kind(),
+            Self::ToInclusive(range) => range.end.kind(),
+            Self::Exclusive(range) => range.start.kind(),
+            Self::Inclusive(range) => range.start().kind(),
+        }
+    }
+
+    pub fn first_val(&self) -> NumberValue {
+        match self {
+            Self::From(range) => range.start,
+            Self::Inclusive(range) => *range.start(),
+            Self::Exclusive(range) => range.start,
+            _ => {
+                let kind = self.kind();
+                NumberArg::new_min_constant(kind).into_value(kind)
+            }
+        }
+    }
+
+    pub fn last_val(&self) -> NumberValue {
+        match self {
+            Self::ToExclusive(range) => range.end.sub_usize(1),
+            Self::ToInclusive(range) => range.end,
+            Self::Exclusive(range) => range.end.sub_usize(1),
+            Self::Inclusive(range) => *range.end(),
+            _ => {
+                let kind = self.kind();
+                NumberArg::new_max_constant(kind).into_value(kind)
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn new_inclusive(
         start: Option<NumberValue>,
         end: Option<NumberValue>,
         kind: NumberKind,
     ) -> syn::Result<Self> {
         Ok(match (start, end) {
             (Some(start), Some(end)) => {
-                Self::check_matching_kinds(kind, &start)?;
-                Self::check_matching_kinds(kind, &end)?;
+                Self::check_matching_kinds(start, kind)?;
+                Self::check_matching_kinds(end, kind)?;
                 Self::Inclusive(start..=end)
             }
             (Some(start), None) => {
-                Self::check_matching_kinds(kind, &start)?;
+                Self::check_matching_kinds(start, kind)?;
                 Self::From(start..)
             }
             (None, Some(end)) => {
-                Self::check_matching_kinds(kind, &end)?;
-                Self::To(..=end)
+                Self::check_matching_kinds(end, kind)?;
+                Self::ToInclusive(..=end)
             }
             (None, None) => Self::Full(kind),
         })
     }
 
-    pub fn to_std_inclusive_range(
-        &self,
-        start_default: Option<NumberValue>,
-        end_default: Option<NumberValue>,
-    ) -> syn::Result<RangeInclusive<NumberValue>> {
-        match self {
-            Self::Full(kind) => {
-                let start = start_default
-                    .unwrap_or_else(|| NumberArg::new_min_constant(*kind).into_value(*kind));
-
-                Self::check_matching_kinds(&start, *kind)?;
-
-                let end = end_default
-                    .unwrap_or_else(|| NumberArg::new_max_constant(*kind).into_value(*kind));
-
-                Self::check_matching_kinds(&end, *kind)?;
-
-                Ok(start..=end)
+    #[must_use]
+    pub fn new_exclusive(
+        start: Option<NumberValue>,
+        end: Option<NumberValue>,
+        kind: NumberKind,
+    ) -> syn::Result<Self> {
+        Ok(match (start, end) {
+            (Some(start), Some(end)) => {
+                Self::check_matching_kinds(start, kind)?;
+                Self::check_matching_kinds(end, kind)?;
+                Self::Exclusive(start..end)
             }
-            Self::From(range) => {
-                let start = range.start.clone();
-                let kind = start.kind();
-
-                let end = end_default
-                    .unwrap_or_else(|| NumberArg::new_max_constant(kind).into_value(kind));
-
-                Self::check_matching_kinds(&end, kind)?;
-
-                Ok(start..=end)
+            (Some(start), None) => {
+                Self::check_matching_kinds(start, kind)?;
+                Self::From(start..)
             }
-            Self::To(range) => {
-                let end = range.end.clone();
-                let kind = end.kind();
-
-                let start = start_default
-                    .unwrap_or_else(|| NumberArg::new_min_constant(kind).into_value(kind));
-
-                Self::check_matching_kinds(&start, kind)?;
-
-                Ok(start..=end)
+            (None, Some(end)) => {
+                Self::check_matching_kinds(end, kind)?;
+                Self::ToExclusive(..end)
             }
-            Self::Inclusive(range) => {
-                let start = range.start();
-                let end = range.end();
+            (None, None) => Self::Full(kind),
+        })
+    }
 
-                Self::check_matching_kinds(start, end)?;
+    #[must_use]
+    pub fn from_arg_range(arg_range: NumberArgRange, kind: NumberKind) -> syn::Result<Self> {
+        let NumberArgRange {
+            start,
+            end,
+            dot_dot_eq,
+            ..
+        } = arg_range;
 
-                Ok(*start..=*end)
+        let inclusive = dot_dot_eq.is_some();
+        let start = start.map(|arg| arg.into_value(kind));
+        let end = end.map(|arg| arg.into_value(kind));
+
+        Ok(match (start, end) {
+            (None, None) => Self::Full(kind),
+            (Some(start), None) => {
+                Self::check_matching_kinds(kind, &start)?;
+                Self::From(start..)
             }
-        }
+            (Some(start), Some(end)) => {
+                Self::check_matching_kinds(kind, &start)?;
+                Self::check_matching_kinds(kind, &end)?;
+
+                if inclusive {
+                    Self::Inclusive(start..=end)
+                } else {
+                    Self::Exclusive(start..end)
+                }
+            }
+            (None, Some(end)) => {
+                Self::check_matching_kinds(kind, &end)?;
+
+                if inclusive {
+                    Self::ToInclusive(..=end)
+                } else {
+                    Self::ToExclusive(..end)
+                }
+            }
+        })
     }
 }

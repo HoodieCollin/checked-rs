@@ -62,3 +62,13 @@ impl ToTokens for ClampedEnumVariant {
         self.field.to_tokens(tokens);
     }
 }
+
+impl std::fmt::Debug for ClampedEnumVariant {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("ClampedEnumVariant")
+            .field("default_val", &self.default_val)
+            .field("ident", &self.ident)
+            .field("field", &self.field)
+            .finish_non_exhaustive()
+    }
+}

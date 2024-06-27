@@ -34,3 +34,17 @@ impl ToTokens for DerivedTraits {
         });
     }
 }
+
+impl std::fmt::Debug for DerivedTraits {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let traits = self
+            .traits
+            .iter()
+            .map(|trait_| trait_.to_token_stream())
+            .collect::<Vec<_>>();
+
+        f.debug_struct("DerivedTraits")
+            .field("traits", &traits)
+            .finish_non_exhaustive()
+    }
+}

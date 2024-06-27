@@ -32,7 +32,7 @@ pub fn define_mod(params: &Params, ranges: &Vec<NumberValueRange>) -> syn::Resul
             params,
             format_ident!("Add"),
             format_ident!("add"),
-            &params.behavior_val,
+            &params.behavior,
             None,
             None,
         ),
@@ -41,7 +41,7 @@ pub fn define_mod(params: &Params, ranges: &Vec<NumberValueRange>) -> syn::Resul
             params,
             format_ident!("Sub"),
             format_ident!("sub"),
-            &params.behavior_val,
+            &params.behavior,
             None,
             None,
         ),
@@ -50,7 +50,7 @@ pub fn define_mod(params: &Params, ranges: &Vec<NumberValueRange>) -> syn::Resul
             params,
             format_ident!("Mul"),
             format_ident!("mul"),
-            &params.behavior_val,
+            &params.behavior,
             None,
             None,
         ),
@@ -59,7 +59,7 @@ pub fn define_mod(params: &Params, ranges: &Vec<NumberValueRange>) -> syn::Resul
             params,
             format_ident!("Div"),
             format_ident!("div"),
-            &params.behavior_val,
+            &params.behavior,
             None,
             None,
         ),
@@ -68,7 +68,7 @@ pub fn define_mod(params: &Params, ranges: &Vec<NumberValueRange>) -> syn::Resul
             params,
             format_ident!("Rem"),
             format_ident!("rem"),
-            &params.behavior_val,
+            &params.behavior,
             None,
             None,
         ),
@@ -77,7 +77,7 @@ pub fn define_mod(params: &Params, ranges: &Vec<NumberValueRange>) -> syn::Resul
             params,
             format_ident!("BitAnd"),
             format_ident!("bitand"),
-            &params.behavior_val,
+            &params.behavior,
             None,
             None,
         ),
@@ -86,7 +86,7 @@ pub fn define_mod(params: &Params, ranges: &Vec<NumberValueRange>) -> syn::Resul
             params,
             format_ident!("BitOr"),
             format_ident!("bitor"),
-            &params.behavior_val,
+            &params.behavior,
             None,
             None,
         ),
@@ -95,28 +95,10 @@ pub fn define_mod(params: &Params, ranges: &Vec<NumberValueRange>) -> syn::Resul
             params,
             format_ident!("BitXor"),
             format_ident!("bitxor"),
-            &params.behavior_val,
+            &params.behavior,
             None,
             None,
         ),
-        // impl_binary_op(
-        //     ident,
-        //     params,
-        //     format_ident!("Shl"),
-        //     format_ident!("shl"),
-        //     &params.behavior_val,
-        //     None,
-        //     None,
-        // ),
-        // impl_binary_op(
-        //     ident,
-        //     params,
-        //     format_ident!("Shr"),
-        //     format_ident!("shr"),
-        //     &params.behavior_val,
-        //     None,
-        //     None,
-        // ),
     ]);
 
     let derive_attr = params
@@ -149,13 +131,13 @@ fn impl_hard_repr(
     ranges: &Vec<NumberValueRange>,
 ) -> syn::Result<TokenStream> {
     let integer = &params.integer;
-    let behavior = &params.behavior_val;
+    let behavior = &params.behavior;
     let lower_limit = params.lower_limit_token();
     let upper_limit = params.upper_limit_token();
 
     let mut methods = Vec::new();
 
-    match params.behavior_val {
+    match params.behavior {
         BehaviorArg::Panicking(..) => {
             methods.push(quote! {
                 #[inline(always)]
@@ -186,21 +168,18 @@ fn impl_hard_repr(
     let clamp_trait_impl = {
         let mut valid_ranges = Vec::with_capacity(ranges.len());
 
-        for range in ranges {
-            let std_range = range
-                .to_std_inclusive_range(params.lower_limit_value(), params.upper_limit_value())?;
-
-            let start = std_range.start();
-            let end = std_range.end();
+        for value_range in ranges {
+            let first_val = value_range.first_val();
+            let last_val = value_range.last_val();
 
             valid_ranges.push(quote! {
-                ValueRange::Inclusive(#start..=#end),
+                ValueRangeInclusive(#first_val..=#last_val),
             });
         }
 
         quote! {
             unsafe impl HardClamp<#integer> for #ident {
-                const VALID_RANGES: &'static [ValueRange<#integer>] = &[
+                const VALID_RANGES: &'static [ValueRangeInclusive<#integer>] = &[
                     #(#valid_ranges)*
                 ];
             }
@@ -252,6 +231,11 @@ fn impl_hard_repr(
             #(#methods)*
 
             #[inline(always)]
+            pub const unsafe fn new_unchecked(val: #integer) -> Self {
+                Self(val)
+            }
+
+            #[inline(always)]
             pub fn rand() -> Self {
                 loop {
                     if let Ok(v) = Self::from_primitive(rand::random::<#integer>()) {
@@ -266,8 +250,8 @@ fn impl_hard_repr(
 
                 if ranges.len() == 1 {
                     let range = &ranges[0];
-                    let min = range.start();
-                    let max = range.end();
+                    let min = range.first_val();
+                    let max = range.last_val();
 
                     if val < min {
                         Err(ClampError::TooSmall { val, min })

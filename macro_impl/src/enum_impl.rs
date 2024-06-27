@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use convert_case::{Case, Casing};
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, ToTokens};
 use syn::parse_quote;
 
@@ -12,7 +12,8 @@ use crate::{
     },
     hard_impl,
     item::enum_item::{ClampedEnumItem, ClampedEnumVariant, ClampedEnumVariantField},
-    params::{BehaviorArg, NumberKind, NumberValueRange, NumberValueRangeSet, Params},
+    params::{DerivedTraits, NumberArg, NumberArgRange, NumberKind, NumberValue, Params},
+    range_seq::RangeSeq,
 };
 
 pub fn define_mod(
@@ -20,7 +21,7 @@ pub fn define_mod(
     parsed_variants: &syn::punctuated::Punctuated<ClampedEnumVariant, syn::Token![,]>,
 ) -> syn::Result<TokenStream> {
     let integer = &params.integer;
-    let behavior_val = &params.behavior_val;
+    let behavior = &params.behavior;
 
     let vis = &params.vis;
     let ident = &params.ident;
@@ -36,7 +37,6 @@ pub fn define_mod(
         .unwrap_or(TokenStream::new());
 
     let value_ident = params.value_ident();
-    let def_value_item = define_value_item(&derive_attr, &value_ident, params.integer);
 
     let implementations = TokenStream::from_iter(vec![
         impl_deref(ident, params),
@@ -50,7 +50,7 @@ pub fn define_mod(
             params,
             format_ident!("Add"),
             format_ident!("add"),
-            behavior_val,
+            behavior,
             None,
             None,
         ),
@@ -59,7 +59,7 @@ pub fn define_mod(
             params,
             format_ident!("Sub"),
             format_ident!("sub"),
-            behavior_val,
+            behavior,
             None,
             None,
         ),
@@ -68,7 +68,7 @@ pub fn define_mod(
             params,
             format_ident!("Mul"),
             format_ident!("mul"),
-            behavior_val,
+            behavior,
             None,
             None,
         ),
@@ -77,7 +77,7 @@ pub fn define_mod(
             params,
             format_ident!("Div"),
             format_ident!("div"),
-            behavior_val,
+            behavior,
             None,
             None,
         ),
@@ -86,7 +86,7 @@ pub fn define_mod(
             params,
             format_ident!("Rem"),
             format_ident!("rem"),
-            behavior_val,
+            behavior,
             None,
             None,
         ),
@@ -95,7 +95,7 @@ pub fn define_mod(
             params,
             format_ident!("BitAnd"),
             format_ident!("bitand"),
-            behavior_val,
+            behavior,
             None,
             None,
         ),
@@ -104,7 +104,7 @@ pub fn define_mod(
             params,
             format_ident!("BitOr"),
             format_ident!("bitor"),
-            behavior_val,
+            behavior,
             None,
             None,
         ),
@@ -113,7 +113,7 @@ pub fn define_mod(
             params,
             format_ident!("BitXor"),
             format_ident!("bitxor"),
-            behavior_val,
+            behavior,
             None,
             None,
         ),
@@ -134,6 +134,8 @@ pub fn define_mod(
     let mut from_range_cases = Vec::with_capacity(parsed_variants.len());
     let mut from_nested_cases = Vec::with_capacity(parsed_variants.len());
     let mut as_primitive_cases = Vec::with_capacity(parsed_variants.len());
+
+    let mut has_catchall = false;
 
     for variant in parsed_variants.iter() {
         let variant_ident = &variant.ident;
@@ -160,10 +162,10 @@ pub fn define_mod(
                 };
 
                 exact_items.push(quote! {
-                    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+                    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
                     pub struct #other_ident;
 
-                    impl ExactValues<#integer> for #other_ident {
+                    unsafe impl ExactValues<#integer> for #other_ident {
                         const VALUES: &'static [#integer] = &[#(#literal_values),*];
                     }
 
@@ -215,28 +217,46 @@ pub fn define_mod(
                 let kind = *integer;
                 let other_ident = params.other_ident(variant_ident);
 
-                let (lower_limit, upper_limit) = variant.field.limits(
-                    kind,
-                    params.lower_limit.clone(),
-                    params.upper_limit.clone(),
-                );
+                let variant_limits = variant.field.limits(kind, None, None)?;
 
-                let lower_limit_val = lower_limit.into_value(kind);
-                let upper_limit_val = upper_limit.into_value(kind);
+                let lower_limit_val = variant_limits.first_val(kind);
+                let upper_limit_val = variant_limits.last_val(kind);
 
                 let mut literal_args = Vec::with_capacity(values.len());
-                let mut literal_values = Vec::with_capacity(values.len());
-                let mut range_set = NumberValueRangeSet::new_with_step_fns();
+                let mut range_seq = RangeSeq::with_capacity(kind, values.len());
+                let mut is_catchall = false;
 
-                for range in values {
+                if values.len() == 1 {
+                    let range = &values[0];
+
+                    if range.is_full_range() {
+                        is_catchall = true;
+                        has_catchall = true;
+                    }
+
                     literal_args.push(range.clone());
 
-                    let range =
-                        range.to_value_range(kind, Some(lower_limit_val), Some(upper_limit_val))?;
+                    let range = range.to_value_range(kind)?;
 
-                    range_set.insert(range.to_std_inclusive_range(None, None)?);
+                    range_seq.insert(range)?;
+                } else {
+                    for range in values {
+                        if range.is_full_range() {
+                            return Err(syn::Error::new(
+                                Span::call_site(),
+                                "Cannot have a catch-all range in a range that contains other ranges",
+                            ));
+                        }
 
-                    literal_values.push(range);
+                        literal_args.push(NumberArgRange::new_inclusive(
+                            range.first_val(kind).into_number_arg(),
+                            range.last_val(kind).into_number_arg(),
+                        ));
+
+                        let range = range.to_value_range(kind)?;
+
+                        range_seq.insert(range)?;
+                    }
                 }
 
                 range_items.push(hard_impl::define_mod(
@@ -246,23 +266,17 @@ pub fn define_mod(
                         vis: parse_quote!(pub),
                         ident: other_ident.clone(),
                         as_soft_or_hard: Some(parse_quote!(as Hard)),
-                        default_val: default_val.cloned(),
-                        behavior_val: behavior_val.clone(),
-                        lower_limit: Some(lower_limit),
-                        upper_limit: Some(upper_limit),
-                        full_coverage: range_set
-                            .gaps(
-                                &NumberValueRange::from_values(
-                                    Some(lower_limit_val),
-                                    Some(upper_limit_val),
-                                    kind,
-                                )?
-                                .to_std_inclusive_range(None, None)?,
-                            )
-                            .next()
-                            .is_none(),
+                        default_val: default_val.map(|arg| arg.into_value(kind)),
+                        behavior: behavior.clone(),
+                        lower_limit_val,
+                        upper_limit_val,
+                        full_coverage: !range_seq.has_gaps(),
                     },
-                    &literal_values,
+                    &range_seq
+                        .ranges()
+                        .into_iter()
+                        .map(|range| range.into())
+                        .collect(),
                 )?);
 
                 variants.push(quote! {
@@ -287,9 +301,15 @@ pub fn define_mod(
                     }
                 });
 
-                from_range_cases.push(quote! {
-                    #(#literal_args)|* => #ident::#variant_ident(#value_ident::new_valid(val)),
-                });
+                if is_catchall {
+                    from_range_cases.push(quote! {
+                        _ => #ident::#variant_ident(unsafe { #other_ident::new_unchecked(val) }),
+                    });
+                } else {
+                    from_range_cases.push(quote! {
+                        #(#literal_args)|* => #ident::#variant_ident(unsafe { #other_ident::new_unchecked(val) }),
+                    });
+                }
 
                 as_primitive_cases.push(quote! {
                     #ident::#variant_ident(val) => val.as_primitive(),
@@ -302,16 +322,18 @@ pub fn define_mod(
             } => {
                 let kind = *integer;
                 let other_ident = params.other_ident(variant_ident);
-                let mut variant_lower_limit = None;
-                let mut variant_upper_limit = None;
 
-                if let Some(range) = value_range {
-                    variant_lower_limit = range.0.start.clone().map(|arg| arg.into_value(kind));
-                    variant_upper_limit = range.0.end.clone().map(|arg| arg.into_value(kind));
-                }
+                let variant_lower_limit = value_range
+                    .as_ref()
+                    .map(|range| range.0.first_val(kind))
+                    .unwrap_or_else(|| NumberArg::new_min_constant(kind).into_value(kind));
+                let variant_upper_limit = value_range
+                    .as_ref()
+                    .map(|range| range.0.last_val(kind))
+                    .unwrap_or_else(|| NumberArg::new_max_constant(kind).into_value(kind));
 
                 let mut exacts = HashSet::with_capacity(nested_variants.len());
-                let mut ranges = NumberValueRangeSet::new_with_step_fns();
+                let mut range_seq = RangeSeq::with_capacity(kind, nested_variants.len());
 
                 nested_enum_items.push(define_mod(
                     &Params {
@@ -320,15 +342,15 @@ pub fn define_mod(
                         vis: parse_quote!(pub),
                         ident: other_ident.clone(),
                         as_soft_or_hard: None,
-                        default_val: default_val.cloned(),
-                        behavior_val: behavior_val.clone(),
-                        lower_limit: variant_lower_limit.map(|val| val.into_number_arg()),
-                        upper_limit: variant_upper_limit.map(|val| val.into_number_arg()),
+                        default_val: default_val.map(|arg| arg.into_value(kind)),
+                        behavior: behavior.clone(),
+                        lower_limit_val: variant_lower_limit,
+                        upper_limit_val: variant_upper_limit,
                         full_coverage: ClampedEnumItem::check_coverage(
                             Some(&mut exacts),
-                            Some(&mut ranges),
-                            variant_lower_limit,
-                            variant_upper_limit,
+                            Some(&mut range_seq),
+                            Some(variant_lower_limit),
+                            Some(variant_upper_limit),
                             kind,
                             nested_variants.iter(),
                         )?,
@@ -375,9 +397,10 @@ pub fn define_mod(
                     });
                 }
 
-                if !ranges.is_empty() {
-                    let literal_ranges = ranges
-                        .iter()
+                if !range_seq.is_empty() {
+                    let literal_ranges = range_seq
+                        .ranges()
+                        .into_iter()
                         .map(|range| {
                             let start = range.start();
                             let end = range.end();
@@ -389,7 +412,7 @@ pub fn define_mod(
                         .collect::<Vec<_>>();
 
                     from_range_cases.push(quote! {
-                        #(#literal_ranges)|* => #ident::#variant_ident(#value_ident::new_valid(val)),
+                        #(#literal_ranges)|* => #ident::#variant_ident(unsafe { #other_ident::new_unchecked(val) }),
                     });
                 }
 
@@ -400,47 +423,22 @@ pub fn define_mod(
         }
     }
 
-    let lower_limit = &params.lower_limit;
-    let upper_limit = &params.upper_limit;
+    let lower_limit = &params.lower_limit_val;
+    let upper_limit = &params.upper_limit_val;
 
-    let constructor_method;
+    let default_val = params.default_val.unwrap_or(*lower_limit);
 
-    match behavior_val {
-        BehaviorArg::Panicking(..) => {
-            constructor_method = quote! {
-                #[inline(always)]
-                pub const fn new_valid(value: #integer) -> Self {
-                    match const_validate(value) {
-                        Ok(v) => Self(v),
-                        Err(e) => panic!("{}", e),
-                    }
-                }
-            };
-        }
-        BehaviorArg::Saturating(..) => {
-            constructor_method = quote! {
-                #[inline(always)]
-                pub const fn new_valid(value: #integer) -> Self {
-                    if value < #lower_limit {
-                        Self(Self::MIN_INT)
-                    } else if value > #upper_limit {
-                        Self(Self::MAX_INT)
-                    } else {
-                        Self(value)
-                    }
-                }
-            };
-        }
-    }
+    let def_value_item = define_value_item(
+        &params.derived_traits,
+        &value_ident,
+        params.integer,
+        lower_limit,
+        upper_limit,
+    );
 
-    let default_impl = if let Some(val) = &params.default_val {
+    let catchall_case = if !has_catchall {
         quote! {
-            impl Default for #ident {
-                #[inline(always)]
-                fn default() -> Self {
-                    <Self as ClampedInteger<#integer>>::from_primitive(#val).unwrap()
-                }
-            }
+            _ => anyhow::bail!("value is not allowed"),
         }
     } else {
         TokenStream::new()
@@ -470,11 +468,11 @@ pub fn define_mod(
             #implementations
 
             #[inline(always)]
-            const fn const_from_primitive(n: #integer) -> #ident {
-                match n {
+            const fn const_from_primitive(val: #integer) -> #ident {
+                match val {
                     #(#from_exact_cases)*
                     #(#from_range_cases)*
-                    // #const_from_catch_all_case
+                    _ => panic!("value is not allowed"),
                 }
             }
 
@@ -486,16 +484,16 @@ pub fn define_mod(
             }
 
             impl InherentBehavior for #ident {
-                type Behavior = #behavior_val;
+                type Behavior = #behavior;
             }
 
             unsafe impl ClampedInteger<#integer> for #ident {
                 #[inline(always)]
-                fn from_primitive(n: #integer) -> ::anyhow::Result<Self> {
-                    Ok(match n {
+                fn from_primitive(val: #integer) -> ::anyhow::Result<Self> {
+                    Ok(match val {
                         #(#from_exact_cases)*
                         #(#from_range_cases)*
-                        // #from_catchall_case
+                        #catchall_case
                     })
                 }
 
@@ -509,10 +507,17 @@ pub fn define_mod(
 
             unsafe impl ClampedEnum<#integer> for #ident {}
 
-            #default_impl
+            impl Default for #ident {
+                #[inline(always)]
+                fn default() -> Self {
+                    <Self as ClampedInteger<#integer>>::from_primitive(#default_val).unwrap()
+                }
+            }
 
             impl #ident {
-                #constructor_method
+                pub const unsafe fn new_unchecked(val: #integer) -> Self {
+                    const_from_primitive(val)
+                }
 
                 #(#factory_methods)*
 
@@ -536,13 +541,67 @@ pub fn define_mod(
 }
 
 fn define_value_item(
-    derive_attr: &TokenStream,
+    derived_traits: &Option<DerivedTraits>,
     value_item_ident: &syn::Ident,
     integer: NumberKind,
+    lower_limit: &NumberValue,
+    upper_limit: &NumberValue,
 ) -> TokenStream {
+    let mut traits = derived_traits
+        .as_ref()
+        .map(|x| {
+            let mut traits = Vec::with_capacity(x.traits.len());
+
+            traits.extend(
+                x.traits
+                    .iter()
+                    .filter(|ty| {
+                        let ty = ty
+                            .path
+                            .segments
+                            .last()
+                            .unwrap()
+                            .to_token_stream()
+                            .to_string();
+
+                        match ty.as_str() {
+                            "Clone" | "Copy" | "PartialEq" | "Eq" | "PartialOrd" | "Ord" => false,
+                            _ => true,
+                        }
+                    })
+                    .cloned(),
+            );
+
+            traits
+        })
+        .unwrap_or(Vec::with_capacity(6));
+
+    traits.extend(vec![
+        parse_quote!(Clone),
+        parse_quote!(Copy),
+        parse_quote!(PartialEq),
+        parse_quote!(Eq),
+        parse_quote!(PartialOrd),
+        parse_quote!(Ord),
+    ]);
+
     quote! {
-        #derive_attr
-        pub struct #value_item_ident<T: ExactValues<#integer>>(pub(self) #integer, std::marker::PhantomData<T>);
+        #[derive(#(#traits),*)]
+        pub struct #value_item_ident<T: ExactValues<#integer>>(pub(self) #integer, pub(self) std::marker::PhantomData<T>);
+
+        impl<T: ExactValues<#integer>> InherentLimits<#integer> for #value_item_ident<T> {
+            const MIN_INT: #integer = #lower_limit;
+            const MAX_INT: #integer = #upper_limit;
+            const MIN: Self = Self(#lower_limit, std::marker::PhantomData);
+            const MAX: Self = Self(#upper_limit, std::marker::PhantomData);
+        }
+
+        impl<T: ExactValues<#integer>> Default for #value_item_ident<T> {
+            #[inline(always)]
+            fn default() -> Self {
+                Self(T::VALUES[0], std::marker::PhantomData)
+            }
+        }
 
         impl<T: ExactValues<#integer>> std::fmt::Debug for #value_item_ident<T> {
             #[inline(always)]
@@ -581,10 +640,10 @@ fn define_value_item(
             }
         }
 
-        impl<T: ExactValues<#integer>> ClampedInteger<#integer> for #value_item_ident<T> {
+        unsafe impl<T: ExactValues<#integer>> ClampedInteger<#integer> for #value_item_ident<T> {
             #[inline(always)]
             fn from_primitive(val: #integer) -> anyhow::Result<Self> {
-                if T::contains(val) {
+                if T::contains_value(val) {
                     Ok(Self(val, std::marker::PhantomData))
                 } else {
                     Err(anyhow::anyhow!("value is not allowed"))
@@ -594,6 +653,13 @@ fn define_value_item(
             #[inline(always)]
             fn as_primitive(&self) -> &#integer {
                 &self.0
+            }
+        }
+
+        impl<T: ExactValues<#integer>> #value_item_ident<T> {
+            #[inline(always)]
+            pub const unsafe fn new_unchecked(val: #integer) -> Self {
+                Self(val, std::marker::PhantomData)
             }
         }
     }

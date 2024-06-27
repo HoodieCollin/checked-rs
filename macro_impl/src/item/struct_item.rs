@@ -1,7 +1,10 @@
 use syn::{parse::Parse, parse_quote};
 
-use crate::params::{
-    kw, AsSoftOrHard, BehaviorArg, DerivedTraits, NumberArg, NumberKind, Params, SemiOrComma,
+use crate::{
+    params::{
+        kw, AsSoftOrHard, BehaviorArg, DerivedTraits, NumberArg, NumberKind, Params, SemiOrComma,
+    },
+    range_seq::RangeSeq,
 };
 
 pub mod field;
@@ -129,36 +132,46 @@ impl Parse for ClampedStructItem {
 }
 
 impl ClampedStructItem {
-    pub fn params(&self) -> Params {
-        let (lower_limit, upper_limit) =
-            self.field
-                .ranges
-                .iter()
-                .fold(NumberArg::LIMITS_INIT, |acc, range| {
-                    let next_lower_limit = range.start_arg(self.integer);
-                    let next_upper_limit = range.end_arg(self.integer);
+    pub fn params(&self) -> syn::Result<Params> {
+        let kind = self.integer;
+        let (mut lower_limit, mut upper_limit) = NumberArg::LIMITS_INIT.clone();
 
-                    (
-                        acc.0
-                            .map(|lower_limit| lower_limit.min(&next_lower_limit, self.integer))
-                            .or(Some(next_lower_limit)),
-                        acc.1
-                            .map(|upper_limit| upper_limit.max(&next_upper_limit, self.integer))
-                            .or(Some(next_upper_limit)),
-                    )
-                });
+        let mut range_seq = RangeSeq::new(kind);
 
-        Params {
+        for range in self.field.ranges.iter() {
+            range_seq.insert(range.to_value_range(kind)?)?;
+
+            let start = range.start_arg(kind);
+            let end = range.end_arg(kind);
+
+            lower_limit = lower_limit.map_or_else(
+                || Some(start.clone()),
+                |lower_limit| Some(lower_limit.min(&start, kind)),
+            );
+
+            upper_limit = upper_limit.map_or_else(
+                || Some(end.clone()),
+                |upper_limit| Some(upper_limit.max(&end, kind)),
+            );
+        }
+
+        Ok(Params {
             integer: self.integer,
             derived_traits: self.derived_traits.clone(),
             vis: self.vis.clone().unwrap_or(syn::Visibility::Inherited),
             ident: self.ident.clone(),
             as_soft_or_hard: self.as_soft_or_hard.clone(),
-            default_val: self.default_val.clone(),
-            behavior_val: self.behavior_val.clone(),
-            lower_limit,
-            upper_limit,
-            full_coverage: true,
-        }
+            default_val: self.default_val.as_ref().map(|arg| arg.into_value(kind)),
+            behavior: self.behavior_val.clone(),
+            lower_limit_val: lower_limit
+                .or_else(|| Some(NumberArg::new_min_constant(kind)))
+                .map(|arg| arg.into_value(kind))
+                .unwrap(),
+            upper_limit_val: upper_limit
+                .or_else(|| Some(NumberArg::new_max_constant(kind)))
+                .map(|arg| arg.into_value(kind))
+                .unwrap(),
+            full_coverage: !range_seq.has_gaps(),
+        })
     }
 }

@@ -486,11 +486,11 @@ pub fn impl_binary_op(
 
     let lower = lower
         .map(|n| n.into_literal_as_tokens(kind))
-        .unwrap_or(params.lower_limit_token_or_default());
+        .unwrap_or(params.lower_limit_token());
 
     let upper = upper
         .map(|n| n.into_literal_as_tokens(kind))
-        .unwrap_or(params.upper_limit_token_or_default());
+        .unwrap_or(params.upper_limit_token());
 
     let assign_trait_name = format_ident!("{}Assign", trait_name);
     let assign_method_name = format_ident!("{}_assign", method_name);

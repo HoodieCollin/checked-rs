@@ -1,8 +1,6 @@
 use std::{
     num,
-    ops::{
-        Add, BitAnd, BitOr, BitXor, Div, Mul, RangeFrom, RangeInclusive, RangeToInclusive, Rem, Sub,
-    },
+    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, RangeInclusive, Rem, Sub},
 };
 
 use crate::{InherentBehavior, InherentLimits};
@@ -59,97 +57,35 @@ impl_clamped_integer_for_basic_types! {
 }
 
 #[derive(Clone)]
-pub enum ValueRange<T: 'static + Copy + Eq + Ord + InherentLimits<T>> {
-    Full(std::marker::PhantomData<T>),
-    From(RangeFrom<T>),
-    To(RangeToInclusive<T>),
-    Inclusive(RangeInclusive<T>),
-}
+#[repr(transparent)]
+pub struct ValueRangeInclusive<T: 'static + Copy + Eq + Ord + InherentLimits<T>>(
+    pub RangeInclusive<T>,
+);
 
-impl<T: 'static + Copy + Eq + Ord + InherentLimits<T>> ValueRange<T> {
-    pub fn from_values(start: Option<T>, end: Option<T>) -> Self {
-        match (start, end) {
-            (Some(start), Some(end)) => Self::Inclusive(start..=end),
-            (Some(start), None) => Self::From(start..),
-            (None, Some(end)) => Self::To(..=end),
-            (None, None) => Self::Full(std::marker::PhantomData),
-        }
-    }
-
+impl<T: 'static + Copy + Eq + Ord + InherentLimits<T>> ValueRangeInclusive<T> {
     pub fn contains(&self, val: T) -> bool {
-        match self {
-            Self::Full(_) => true,
-            Self::From(range) => val >= range.start,
-            Self::To(range) => val <= range.end,
-            Self::Inclusive(range) => val >= *range.start() && val <= *range.end(),
-        }
+        val >= *self.0.start() && val <= *self.0.end()
     }
 
-    pub fn start(&self) -> T {
-        match self {
-            Self::Full(_) => <T as InherentLimits<T>>::MIN_INT,
-            Self::From(range) => range.start,
-            Self::To(..) => <T as InherentLimits<T>>::MIN_INT,
-            Self::Inclusive(range) => *range.start(),
-        }
+    pub fn first_val(&self) -> T {
+        *self.0.start()
     }
 
-    pub fn end(&self) -> T {
-        match self {
-            Self::Full(_) => <T as InherentLimits<T>>::MAX_INT,
-            Self::From(..) => <T as InherentLimits<T>>::MAX_INT,
-            Self::To(range) => range.end,
-            Self::Inclusive(range) => *range.end(),
-        }
-    }
-
-    pub fn to_std_inclusive_range(
-        &self,
-        start_override: Option<T>,
-        end_override: Option<T>,
-    ) -> RangeInclusive<T> {
-        match self {
-            Self::Full(..) => {
-                let start = start_override.unwrap_or_else(|| <T as InherentLimits<T>>::MIN_INT);
-
-                let end = end_override.unwrap_or_else(|| <T as InherentLimits<T>>::MAX_INT);
-
-                start..=end
-            }
-            Self::From(range) => {
-                let start = start_override.unwrap_or_else(|| range.start.clone());
-
-                let end = end_override.unwrap_or_else(|| <T as InherentLimits<T>>::MAX_INT);
-
-                start..=end
-            }
-            Self::To(range) => {
-                let end = end_override.unwrap_or_else(|| range.end.clone());
-
-                let start = start_override.unwrap_or_else(|| <T as InherentLimits<T>>::MIN_INT);
-
-                start..=end
-            }
-            Self::Inclusive(range) => {
-                let start = start_override.unwrap_or_else(|| range.start().clone());
-                let end = end_override.unwrap_or_else(|| range.end().clone());
-
-                start..=end
-            }
-        }
+    pub fn last_val(&self) -> T {
+        *self.0.end()
     }
 }
 
 pub unsafe trait SoftClamp<T: 'static + Copy + Eq + Ord + InherentLimits<T>>:
     ClampedInteger<T> + InherentBehavior
 {
-    const VALID_RANGES: &'static [ValueRange<T>];
+    const VALID_RANGES: &'static [ValueRangeInclusive<T>];
 }
 
 pub unsafe trait HardClamp<T: 'static + Copy + Eq + Ord + InherentLimits<T>>:
     ClampedInteger<T> + InherentBehavior
 {
-    const VALID_RANGES: &'static [ValueRange<T>];
+    const VALID_RANGES: &'static [ValueRangeInclusive<T>];
 }
 
 pub unsafe trait ClampedEnum<T: Copy>: ClampedInteger<T> + InherentBehavior {}

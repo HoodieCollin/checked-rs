@@ -1,4 +1,4 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::parse::Parse;
 
@@ -48,6 +48,8 @@ impl Parse for NumberArgRange {
                 if !input.is_empty() {
                     end = Some(input.parse()?);
                 }
+            } else {
+                return Err(lookahead.error());
             }
         } else {
             return Err(lookahead.error());
@@ -104,6 +106,24 @@ impl std::fmt::Display for NumberArgRange {
 }
 
 impl NumberArgRange {
+    pub fn new_exclusive(start: NumberArg, end: NumberArg) -> Self {
+        Self {
+            start: Some(start),
+            dot_dot_eq: None,
+            dot_dot: Some(syn::Token![..](Span::call_site())),
+            end: Some(end),
+        }
+    }
+
+    pub fn new_inclusive(start: NumberArg, end: NumberArg) -> Self {
+        Self {
+            start: Some(start),
+            dot_dot_eq: Some(syn::Token![..=](Span::call_site())),
+            dot_dot: None,
+            end: Some(end),
+        }
+    }
+
     pub fn start_arg(&self, kind: NumberKind) -> NumberArg {
         self.start
             .as_ref()
@@ -111,7 +131,7 @@ impl NumberArgRange {
             .unwrap_or_else(|| NumberArg::new_min_constant(kind))
     }
 
-    pub fn start_val(&self, kind: NumberKind) -> NumberValue {
+    pub fn first_val(&self, kind: NumberKind) -> NumberValue {
         self.start_arg(kind).into_value(kind)
     }
 
@@ -122,55 +142,37 @@ impl NumberArgRange {
             .unwrap_or_else(|| NumberArg::new_max_constant(kind))
     }
 
-    pub fn end_val(&self, kind: NumberKind) -> NumberValue {
-        self.end_arg(kind).into_value(kind)
-    }
+    pub fn last_val(&self, kind: NumberKind) -> NumberValue {
+        if let Some(end_arg) = &self.end {
+            let val = end_arg.into_value(kind);
 
-    pub fn start_and_end_args(&self, kind: NumberKind) -> (NumberArg, NumberArg) {
-        (self.start_arg(kind), self.end_arg(kind))
+            if self.dot_dot_eq.is_some() {
+                val
+            } else {
+                val.sub_usize(1)
+            }
+        } else {
+            NumberArg::new_max_constant(kind).into_value(kind)
+        }
     }
 
     pub fn is_full_range(&self) -> bool {
         self.start.is_none() && self.end.is_none()
     }
 
-    pub fn to_value_range(
-        &self,
-        kind: NumberKind,
-        start_default: Option<NumberValue>,
-        end_default: Option<NumberValue>,
-    ) -> syn::Result<NumberValueRange> {
-        NumberValueRange::from_values(
-            self.start
-                .as_ref()
-                .map(|arg| arg.into_value(kind))
-                .or(start_default),
-            self.end
-                .as_ref()
-                .map(|arg| arg.into_value(kind))
-                .or(end_default),
-            kind,
-        )
+    pub fn to_value_range(&self, kind: NumberKind) -> syn::Result<NumberValueRange> {
+        NumberValueRange::from_arg_range(self.clone(), kind)
     }
 
     pub fn iter(&self, kind: NumberKind) -> impl Iterator<Item = NumberArg> {
-        let start = self.start_val(kind);
-
-        let end = {
-            let val = self.end_val(kind);
-
-            if self.dot_dot_eq.is_some() {
-                val.add_usize(1)
-            } else {
-                val
-            }
-        };
-
-        start.iter_to(end).map(|val| val.into_number_arg())
+        self.iter_values(kind).map(|val| val.into_number_arg())
     }
 
     pub fn iter_values(&self, kind: NumberKind) -> impl Iterator<Item = NumberValue> {
-        self.iter(kind).map(move |arg| arg.into_value(kind))
+        let first = self.first_val(kind);
+        let last = self.last_val(kind);
+
+        first.iter_to(last.add_usize(1))
     }
 }
 
@@ -207,51 +209,10 @@ impl std::fmt::Display for StrictNumberArgRange {
     }
 }
 
-impl StrictNumberArgRange {
-    pub fn start_arg(&self, kind: NumberKind) -> NumberArg {
-        self.0.start_arg(kind)
-    }
+impl std::ops::Deref for StrictNumberArgRange {
+    type Target = NumberArgRange;
 
-    pub fn start_val(&self, kind: NumberKind) -> NumberValue {
-        self.start_arg(kind).into_value(kind)
-    }
-
-    pub fn end_arg(&self, kind: NumberKind) -> NumberArg {
-        self.0.end_arg(kind)
-    }
-
-    pub fn end_val(&self, kind: NumberKind) -> NumberValue {
-        self.end_arg(kind).into_value(kind)
-    }
-
-    pub fn start_and_end_args(&self, kind: NumberKind) -> (NumberArg, NumberArg) {
-        (self.start_arg(kind), self.end_arg(kind))
-    }
-
-    pub fn to_value_range(
-        &self,
-        kind: NumberKind,
-        start_default: Option<NumberValue>,
-        end_default: Option<NumberValue>,
-    ) -> syn::Result<NumberValueRange> {
-        let start = self
-            .0
-            .start
-            .as_ref()
-            .map(|arg| arg.into_value(kind))
-            .or(start_default);
-
-        let end = self
-            .0
-            .end
-            .as_ref()
-            .map(|arg| arg.into_value(kind))
-            .or(end_default);
-
-        NumberValueRange::from_values(start, end, kind)
-    }
-
-    pub fn iter(&self, kind: NumberKind) -> impl Iterator<Item = NumberArg> {
-        self.0.iter(kind)
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
