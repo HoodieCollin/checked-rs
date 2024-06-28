@@ -101,7 +101,7 @@ impl RangeSeq {
         Ok(())
     }
 
-    pub fn ranges(&self) -> Vec<RangeInclusive<NumberValue>> {
+    pub fn all_ranges(&self) -> Vec<RangeInclusive<NumberValue>> {
         if self.has_full_range {
             let full_range = {
                 let value_range = NumberValueRange::Full(self.kind);
@@ -113,6 +113,14 @@ impl RangeSeq {
                 .collect()
         } else {
             self.ranges.clone()
+        }
+    }
+
+    pub fn uniq_ranges(&self) -> Vec<NumberValueRange> {
+        if self.has_full_range {
+            vec![NumberValueRange::Full(self.kind)]
+        } else {
+            self.ranges.iter().map(|range| range.into()).collect()
         }
     }
 
@@ -138,5 +146,17 @@ impl RangeSeq {
         }
 
         false
+    }
+
+    pub fn first_uniq_val(&self) -> Option<NumberValue> {
+        self.uniq_ranges()
+            .first()
+            .map(|range| range.first_val().clone())
+    }
+
+    pub fn last_uniq_val(&self) -> Option<NumberValue> {
+        self.uniq_ranges()
+            .last()
+            .map(|range| range.last_val().clone())
     }
 }

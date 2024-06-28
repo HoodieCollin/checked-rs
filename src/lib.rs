@@ -151,8 +151,10 @@
 
 use std::{
     num,
-    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Sub},
+    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Sub},
 };
+
+use clamp::ValueRangeInclusive;
 pub mod clamp;
 pub mod guard;
 pub mod view;
@@ -169,53 +171,131 @@ pub mod prelude {
 
     pub use crate::{
         clamp::*, commit_or_bail, view::*, Behavior, InherentBehavior, InherentLimits,
+        OpBehaviorParams,
     };
 
     pub use checked_rs_macros::clamped;
 }
 
+#[derive(Debug, Clone)]
+pub enum OpBehaviorParams<T: 'static + Copy + Eq + Ord + InherentLimits<T>> {
+    Simple {
+        min: T,
+        max: T,
+    },
+    ExactsOnly(&'static [T]),
+    RangesOnly(&'static [ValueRangeInclusive<T>]),
+    ExactsAndRanges {
+        exacts: &'static [T],
+        ranges: &'static [ValueRangeInclusive<T>],
+    },
+}
+
 pub trait Behavior: Copy + 'static {
-    // Binary Ops
-    fn add<T: Add<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+    fn add<T: 'static + Copy + Eq + Ord + InherentLimits<T>>(
+        lhs: T,
+        rhs: T,
+        params: OpBehaviorParams<T>,
+    ) -> T
     where
-        T::Output: Eq + Ord,
-        num::Saturating<T>: Add<Output = num::Saturating<T>>;
-    fn sub<T: Sub<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+        T: Add<Output = T>,
+        T::Output: Eq + Ord + Into<T>,
+        num::Saturating<T>: Add<Output = num::Saturating<T>>,
+        <num::Saturating<T> as Add>::Output: Eq + Ord + Into<num::Saturating<T>>;
+    fn sub<T: 'static + Copy + Eq + Ord + InherentLimits<T>>(
+        lhs: T,
+        rhs: T,
+        params: OpBehaviorParams<T>,
+    ) -> T
     where
-        T::Output: Eq + Ord,
-        num::Saturating<T>: Sub<Output = num::Saturating<T>>;
-    fn mul<T: Mul<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+        T: Sub<Output = T>,
+        T::Output: Eq + Ord + Into<T>,
+        num::Saturating<T>: Sub<Output = num::Saturating<T>>,
+        <num::Saturating<T> as Sub>::Output: Eq + Ord + Into<num::Saturating<T>>;
+    fn mul<T: 'static + Copy + Eq + Ord + InherentLimits<T>>(
+        lhs: T,
+        rhs: T,
+        params: OpBehaviorParams<T>,
+    ) -> T
     where
-        T::Output: Eq + Ord,
-        num::Saturating<T>: Mul<Output = num::Saturating<T>>;
-    fn div<T: Div<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+        T: Mul<Output = T>,
+        T::Output: Eq + Ord + Into<T>,
+        num::Saturating<T>: Mul<Output = num::Saturating<T>>,
+        <num::Saturating<T> as Mul>::Output: Eq + Ord + Into<num::Saturating<T>>;
+    fn div<T: 'static + Copy + Eq + Ord + InherentLimits<T>>(
+        lhs: T,
+        rhs: T,
+        params: OpBehaviorParams<T>,
+    ) -> T
     where
-        T::Output: Eq + Ord,
-        num::Saturating<T>: Div<Output = num::Saturating<T>>;
-    fn rem<T: Rem<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+        T: Div<Output = T>,
+        T::Output: Eq + Ord + Into<T>,
+        num::Saturating<T>: Div<Output = num::Saturating<T>>,
+        <num::Saturating<T> as Div>::Output: Eq + Ord + Into<num::Saturating<T>>;
+    fn rem<T: 'static + Copy + Eq + Ord + InherentLimits<T>>(
+        lhs: T,
+        rhs: T,
+        params: OpBehaviorParams<T>,
+    ) -> T
     where
-        T::Output: Eq + Ord,
-        num::Saturating<T>: Rem<Output = num::Saturating<T>>;
-    fn bitand<T: BitAnd<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+        T: Rem<Output = T> + Sub<Output = T>,
+        <T as Rem>::Output: Eq + Ord + Into<T>,
+        <T as Sub>::Output: Eq + Ord + Into<T>,
+        num::Saturating<T>: Rem<Output = num::Saturating<T>>,
+        <num::Saturating<T> as Rem>::Output: Eq + Ord + Into<num::Saturating<T>>;
+    fn bitand<T: 'static + Copy + Eq + Ord + InherentLimits<T>>(
+        lhs: T,
+        rhs: T,
+        params: OpBehaviorParams<T>,
+    ) -> T
     where
-        T::Output: Eq + Ord,
-        num::Saturating<T>: BitAnd<Output = num::Saturating<T>>;
-    fn bitor<T: BitOr<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+        T: BitAnd<Output = T> + Sub<Output = T>,
+        <T as BitAnd>::Output: Eq + Ord + Into<T>,
+        <T as Sub>::Output: Eq + Ord + Into<T>,
+        num::Saturating<T>: BitAnd<Output = num::Saturating<T>>,
+        <num::Saturating<T> as BitAnd>::Output: Eq + Ord + Into<num::Saturating<T>>;
+    fn bitor<T: 'static + Copy + Eq + Ord + InherentLimits<T>>(
+        lhs: T,
+        rhs: T,
+        params: OpBehaviorParams<T>,
+    ) -> T
     where
-        T::Output: Eq + Ord,
-        num::Saturating<T>: BitOr<Output = num::Saturating<T>>;
-    fn bitxor<T: BitXor<Output = T>>(lhs: T, rhs: T, min: T::Output, max: T::Output) -> T::Output
+        T: BitOr<Output = T> + Sub<Output = T>,
+        <T as BitOr>::Output: Eq + Ord + Into<T>,
+        <T as Sub>::Output: Eq + Ord + Into<T>,
+        num::Saturating<T>: BitOr<Output = num::Saturating<T>>,
+        <num::Saturating<T> as BitOr>::Output: Eq + Ord + Into<num::Saturating<T>>;
+    fn bitxor<T: 'static + Copy + Eq + Ord + InherentLimits<T>>(
+        lhs: T,
+        rhs: T,
+        params: OpBehaviorParams<T>,
+    ) -> T
     where
-        T::Output: Eq + Ord,
-        num::Saturating<T>: BitXor<Output = num::Saturating<T>>;
-    fn neg<T: std::ops::Neg<Output = T>>(value: T, min: T::Output, max: T::Output) -> T::Output
+        T: BitXor<Output = T> + Sub<Output = T>,
+        <T as BitXor>::Output: Eq + Ord + Into<T>,
+        <T as Sub>::Output: Eq + Ord + Into<T>,
+        num::Saturating<T>: BitXor<Output = num::Saturating<T>>,
+        <num::Saturating<T> as BitXor>::Output: Eq + Ord + Into<num::Saturating<T>>;
+    fn neg<T: 'static + Copy + Eq + Ord + InherentLimits<T>>(
+        val: T,
+        params: OpBehaviorParams<T>,
+    ) -> T
     where
-        T::Output: Eq + Ord,
-        num::Saturating<T>: std::ops::Neg<Output = num::Saturating<T>>;
-    fn not<T: std::ops::Not<Output = T>>(value: T, min: T::Output, max: T::Output) -> T::Output
+        T: Neg<Output = T> + Sub<Output = T>,
+        <T as Neg>::Output: Eq + Ord + Into<T>,
+        <T as Sub>::Output: Eq + Ord + Into<T>,
+        num::Saturating<T>: Neg<Output = num::Saturating<T>>,
+        <num::Saturating<T> as Neg>::Output: Eq + Ord + Into<num::Saturating<T>>;
+    fn not<T: 'static + Copy + Eq + Ord + InherentLimits<T>>(
+        val: T,
+        params: OpBehaviorParams<T>,
+    ) -> T
     where
-        T::Output: Eq + Ord,
-        num::Saturating<T>: std::ops::Not<Output = num::Saturating<T>>;
+        T: Not<Output = T> + Sub<Output = T>,
+        <T as Not>::Output: Eq + Ord + Into<T>,
+        <T as Sub>::Output: Eq + Ord + Into<T>,
+        num::Saturating<T>: Not<Output = num::Saturating<T>>,
+        <num::Saturating<T> as Not>::Output: Eq + Ord + Into<num::Saturating<T>>;
 }
 
 pub trait InherentLimits<T>: 'static {
@@ -223,6 +303,10 @@ pub trait InherentLimits<T>: 'static {
     const MAX: Self;
     const MIN_INT: T;
     const MAX_INT: T;
+
+    fn is_zero(&self) -> bool;
+    fn is_negative(&self) -> bool;
+    fn is_positive(&self) -> bool;
 }
 
 pub trait InherentBehavior: 'static {
@@ -233,17 +317,34 @@ pub trait InherentBehavior: 'static {
 mod tests {
     use crate::prelude::*;
 
-    // #[test]
-    // fn test_enum_simple() {
-    //     clamped! {
-    //         #[usize]
-    //         enum DoubleSentinel {
-    //             Zero(0),
-    //             Valid(..),
-    //             Invalid(usize::MAX),
-    //         }
-    //     }
-    // }
+    clamped! {
+        #[usize; derive(Debug)]
+        enum DoubleSentinel {
+            Zero(0),
+            Valid(..),
+            Invalid(usize::MAX),
+        }
+    }
+
+    #[test]
+    fn test_enum_simple() {
+        let value = DoubleSentinel::new(0);
+
+        assert!(value.is_some());
+
+        let mut value = value.unwrap();
+
+        value += 1;
+
+        assert_eq!(value, 1);
+        assert!(value.is_valid());
+
+        value -= 1;
+        assert!(value.is_zero());
+
+        value += usize::MAX;
+        assert!(value.is_invalid());
+    }
 
     // #[test]
     // fn test_enum_non_comprehensive() {
@@ -279,38 +380,38 @@ mod tests {
     //     }
     // }
 
-    #[test]
-    fn test_enum_nested() {
-        clamped! {
-            #[usize]
-            enum ResponseCode {
-                Success[200..300] {
-                    Okay(200),
-                    Created(201),
-                    Accepted(202),
-                    Unknown(..),
-                },
-                Error {
-                    Client[400..500] {
-                        BadRequest(400),
-                        Unauthorized(401),
-                        PaymentRequired(402),
-                        Forbidden(403),
-                        NotFound(404),
-                        Unknown(..)
-                    },
-                    Server[500..600] {
-                        Internal(500),
-                        NotImplemented(501),
-                        BadGateway(502),
-                        ServiceUnavailable(503),
-                        GatewayTimeout(504),
-                        Unknown(..)
-                    }
-                }
-            }
-        }
-    }
+    // #[test]
+    // fn test_enum_nested() {
+    //     clamped! {
+    //         #[usize]
+    //         enum ResponseCode {
+    //             Success[200..300] {
+    //                 Okay(200),
+    //                 Created(201),
+    //                 Accepted(202),
+    //                 Unknown(..),
+    //             },
+    //             Error {
+    //                 Client[400..500] {
+    //                     BadRequest(400),
+    //                     Unauthorized(401),
+    //                     PaymentRequired(402),
+    //                     Forbidden(403),
+    //                     NotFound(404),
+    //                     Unknown(..)
+    //                 },
+    //                 Server[500..600] {
+    //                     Internal(500),
+    //                     NotImplemented(501),
+    //                     BadGateway(502),
+    //                     ServiceUnavailable(503),
+    //                     GatewayTimeout(504),
+    //                     Unknown(..)
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
     // #[test]
     // fn test_struct_soft() {
@@ -320,19 +421,55 @@ mod tests {
     //     }
     // }
 
-    // #[test]
-    // fn test_struct_hard() {
-    //     clamped! {
-    //         #[usize as Hard]
-    //         struct TenOrMore(10..);
-    //     }
-    // }
+    clamped! {
+        #[usize as Hard; derive(Debug)]
+        struct TenOrMore(10..);
+    }
 
-    // #[test]
-    // fn test_struct_multiple_ranges() {
-    //     clamped! {
-    //         #[usize as Hard]
-    //         struct LessThanTenOrBetween999And2000(..10, 1000..2000);
-    //     }
-    // }
+    #[test]
+    fn test_struct_hard() {
+        let value = TenOrMore::new(10);
+
+        assert!(value.is_some());
+
+        let mut value = value.unwrap();
+
+        value += 1;
+
+        assert_eq!(value, 11);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_struct_hard_overflow() {
+        let value = TenOrMore::new(10);
+
+        assert!(value.is_some());
+
+        let mut value = value.unwrap();
+
+        value -= 1;
+    }
+
+    clamped! {
+        #[usize as Hard; derive(Debug)]
+        struct LessThanTenOrBetween999And2000(..10, 1000..2000);
+    }
+
+    #[test]
+    fn test_struct_multiple_ranges() {
+        let value = LessThanTenOrBetween999And2000::new(5);
+
+        assert!(value.is_some());
+
+        let mut value = value.unwrap();
+
+        value += 3;
+
+        assert_eq!(value, 8);
+
+        value += 1000;
+
+        assert_eq!(value, 1008);
+    }
 }

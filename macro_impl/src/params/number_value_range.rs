@@ -1,10 +1,11 @@
 use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
-use proc_macro2::Span;
+use proc_macro2::{Span, TokenStream};
+use quote::{quote, ToTokens};
 
 use super::{NumberArg, NumberArgRange, NumberKind, NumberValue};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum NumberValueRange {
     Full(NumberKind),
     From(RangeFrom<NumberValue>),
@@ -86,6 +87,17 @@ impl From<&RangeInclusive<NumberValue>> for NumberValueRange {
     }
 }
 
+impl ToTokens for NumberValueRange {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let min = self.first_val();
+        let max = self.last_val();
+
+        tokens.extend(quote! {
+            #min..=#max
+        });
+    }
+}
+
 impl NumberValueRange {
     fn check_matching_kinds(
         a: impl Into<NumberKind> + std::fmt::Debug + Clone,
@@ -137,6 +149,14 @@ impl NumberValueRange {
                 let kind = self.kind();
                 NumberArg::new_max_constant(kind).into_value(kind)
             }
+        }
+    }
+
+    pub fn contains(&self, val: &NumberValue) -> bool {
+        if *val >= self.first_val() && *val <= self.first_val() {
+            true
+        } else {
+            false
         }
     }
 

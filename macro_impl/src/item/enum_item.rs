@@ -241,7 +241,7 @@ impl ClampedEnumItem {
                             kind,
                         )?)?;
                     } else {
-                        for range in inner_range_seq.ranges() {
+                        for range in inner_range_seq.all_ranges() {
                             outer_range_seq.insert(range)?;
                         }
                     }
@@ -276,7 +276,7 @@ impl ClampedEnumItem {
 
             return Ok(true);
         } else if let Some(parent_range_seq) = parent_range_seq {
-            for range in outer_range_seq.ranges() {
+            for range in outer_range_seq.all_ranges() {
                 parent_range_seq.insert(range)?;
             }
         }
@@ -370,6 +370,19 @@ impl ClampedEnumItem {
                 kind,
                 self.variants.iter(),
             )?,
+            exact_values: if parent_exacts.is_empty() {
+                None
+            } else {
+                let mut exact_values = parent_exacts.into_iter().collect::<Vec<_>>();
+                exact_values.sort_unstable();
+                exact_values.dedup();
+                Some(exact_values)
+            },
+            valid_ranges: if parent_range_seq.is_empty() {
+                None
+            } else {
+                Some(parent_range_seq.uniq_ranges())
+            },
         };
 
         Ok(this)

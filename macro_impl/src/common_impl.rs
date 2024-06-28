@@ -478,22 +478,24 @@ pub fn impl_binary_op(
     trait_name: syn::Ident,
     method_name: syn::Ident,
     behavior: &BehaviorArg,
-    lower: Option<NumberArg>,
-    upper: Option<NumberArg>,
+    explicit_bounds: Option<(NumberArg, NumberArg)>,
 ) -> TokenStream {
-    let kind = params.integer;
     let integer = params.integer;
-
-    let lower = lower
-        .map(|n| n.into_literal_as_tokens(kind))
-        .unwrap_or(params.lower_limit_token());
-
-    let upper = upper
-        .map(|n| n.into_literal_as_tokens(kind))
-        .unwrap_or(params.upper_limit_token());
-
     let assign_trait_name = format_ident!("{}Assign", trait_name);
     let assign_method_name = format_ident!("{}_assign", method_name);
+
+    let op_params = if let Some((lower, upper)) = explicit_bounds {
+        quote! {
+            OpBehaviorParams::Simple {
+                min: #lower,
+                max: #upper,
+            }
+        }
+    } else {
+        quote! {
+            self.op_behavior_params()
+        }
+    };
 
     quote! {
         impl std::ops::#trait_name for #name {
@@ -501,7 +503,13 @@ pub fn impl_binary_op(
 
             #[inline(always)]
             fn #method_name(self, rhs: #name) -> #name {
-                Self::from_primitive(#behavior::#method_name(self.into_primitive(), rhs.into_primitive(), #lower, #upper)).expect("arithmetic operations should be infallible")
+                unsafe {
+                    Self::from_primitive_unchecked(#behavior::#method_name(
+                        self.into_primitive(),
+                        rhs.into_primitive(),
+                        #op_params
+                    ))
+                }
             }
         }
 
@@ -510,7 +518,13 @@ pub fn impl_binary_op(
 
             #[inline(always)]
             fn #method_name(self, rhs: #integer) -> #name {
-                Self::from_primitive(#behavior::#method_name(self.into_primitive(), rhs, #lower, #upper)).expect("arithmetic operations should be infallible")
+                unsafe {
+                    Self::from_primitive_unchecked(#behavior::#method_name(
+                        self.into_primitive(),
+                        rhs,
+                        #op_params
+                    ))
+                }
             }
         }
 
@@ -519,7 +533,10 @@ pub fn impl_binary_op(
 
             #[inline(always)]
             fn #method_name(self, rhs: #name) -> #integer {
-                Panicking::#method_name(self, rhs.into_primitive(), #integer::MIN, #integer::MAX)
+                Panicking::#method_name(self, rhs.into_primitive(), OpBehaviorParams::Simple {
+                    min: #integer::MIN,
+                    max: #integer::MAX,
+                })
             }
         }
 
@@ -528,39 +545,64 @@ pub fn impl_binary_op(
 
             #[inline(always)]
             fn #method_name(self, rhs: #name) -> std::num::Saturating<#integer> {
-                std::num::Saturating(Saturating::#method_name(self.0, rhs.into_primitive(), #integer::MIN, #integer::MAX))
+                std::num::Saturating(Saturating::#method_name(self.0, rhs.into_primitive(), OpBehaviorParams::Simple {
+                    min: #integer::MIN,
+                    max: #integer::MAX,
+                }))
             }
         }
 
         impl std::ops::#assign_trait_name for #name {
             #[inline(always)]
             fn #assign_method_name(&mut self, rhs: #name) {
-                *self = Self::from_primitive(
-                    #behavior::#method_name(self.into_primitive(), rhs.into_primitive(), #lower, #upper)
-                ).expect("assignable operations should be infallible");
+                *self = unsafe {
+                    Self::from_primitive_unchecked(#behavior::#method_name(
+                        self.into_primitive(),
+                        rhs.into_primitive(),
+                        #op_params
+                    ))
+                };
             }
         }
 
         impl std::ops::#assign_trait_name<#integer> for #name {
             #[inline(always)]
             fn #assign_method_name(&mut self, rhs: #integer) {
-                *self = Self::from_primitive(
-                    #behavior::#method_name(self.into_primitive(), rhs, #lower, #upper)
-                ).expect("assignable operations should be infallible");
+                *self = unsafe {
+                    Self::from_primitive_unchecked(#behavior::#method_name(
+                        self.into_primitive(),
+                        rhs,
+                        #op_params
+                    ))
+                };
             }
         }
 
         impl std::ops::#assign_trait_name<#name> for #integer {
             #[inline(always)]
             fn #assign_method_name(&mut self, rhs: #name) {
-                *self = Panicking::#method_name(*self, rhs.into_primitive(), #integer::MIN, #integer::MAX);
+                *self = Panicking::#method_name(
+                    *self,
+                    rhs.into_primitive(),
+                    OpBehaviorParams::Simple {
+                        min: #integer::MIN,
+                        max: #integer::MAX,
+                    }
+                );
             }
         }
 
         impl std::ops::#assign_trait_name<#name> for std::num::Saturating<#integer> {
             #[inline(always)]
             fn #assign_method_name(&mut self, rhs: #name) {
-                *self = std::num::Saturating(Saturating::#method_name(self.0, rhs.into_primitive(), #integer::MIN, #integer::MAX));
+                *self = std::num::Saturating(Saturating::#method_name(
+                    self.0,
+                    rhs.into_primitive(),
+                    OpBehaviorParams::Simple {
+                        min: #integer::MIN,
+                        max: #integer::MAX,
+                    }
+                ));
             }
         }
     }

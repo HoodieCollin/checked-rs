@@ -64,6 +64,8 @@ pub struct Params {
     pub lower_limit_val: NumberValue,
     pub upper_limit_val: NumberValue,
     pub full_coverage: bool,
+    pub exact_values: Option<Vec<NumberValue>>,
+    pub valid_ranges: Option<Vec<NumberValueRange>>,
 }
 
 impl std::fmt::Debug for Params {
@@ -79,6 +81,8 @@ impl std::fmt::Debug for Params {
             .field("lower_limit", &self.lower_limit_val)
             .field("upper_limit", &self.upper_limit_val)
             .field("full_coverage", &self.full_coverage)
+            .field("exact_values", &self.exact_values)
+            .field("valid_ranges", &self.valid_ranges)
             .finish()
     }
 }
@@ -100,6 +104,35 @@ impl Params {
         format_ident!("{}{}", other_name, self.value_ident())
     }
 
+    pub fn default_val_token(&self) -> TokenStream {
+        let kind = self.integer;
+
+        // if the `default_val` was provided, use it
+        if let Some(val) = self.default_val {
+            return val.to_token_stream();
+        }
+
+        let zero = NumberValue::new(kind, 0);
+
+        // if zero is in the exact value list or allowed by the ranges, use zero
+        if let Some(exacts) = &self.exact_values {
+            if exacts.contains(&zero) {
+                return zero.to_token_stream();
+            }
+        }
+
+        if let Some(ranges) = &self.valid_ranges {
+            for range in ranges {
+                if range.contains(&zero) {
+                    return zero.to_token_stream();
+                }
+            }
+        }
+
+        // otherwise use the `lower_limit`
+        self.lower_limit_token()
+    }
+
     /// Output the lower limit value as a bare literal in a token stream.
     pub fn lower_limit_token(&self) -> TokenStream {
         syn::parse_str(&self.lower_limit_val.to_string()).unwrap()
@@ -108,6 +141,60 @@ impl Params {
     /// Output the upper limit value as a bare literal in a token stream.
     pub fn upper_limit_token(&self) -> TokenStream {
         syn::parse_str(&self.upper_limit_val.to_string()).unwrap()
+    }
+
+    pub fn first_uniq_val(&self) -> NumberValue {
+        let exact_min = if let Some(exacts) = &self.exact_values {
+            exacts.first().copied()
+        } else {
+            None
+        };
+
+        let range_min = if let Some(ranges) = &self.valid_ranges {
+            ranges.first().map(|range| range.first_val())
+        } else {
+            None
+        };
+
+        match (exact_min, range_min) {
+            (Some(exact), Some(range)) => {
+                if exact < range {
+                    exact
+                } else {
+                    range
+                }
+            }
+            (Some(exact), None) => exact,
+            (None, Some(range)) => range,
+            (None, None) => self.lower_limit_val,
+        }
+    }
+
+    pub fn last_uniq_val(&self) -> NumberValue {
+        let exact_max = if let Some(exacts) = &self.exact_values {
+            exacts.last().copied()
+        } else {
+            None
+        };
+
+        let range_max = if let Some(ranges) = &self.valid_ranges {
+            ranges.last().map(|range| range.last_val())
+        } else {
+            None
+        };
+
+        match (exact_max, range_max) {
+            (Some(exact), Some(range)) => {
+                if exact > range {
+                    exact
+                } else {
+                    range
+                }
+            }
+            (Some(exact), None) => exact,
+            (None, Some(range)) => range,
+            (None, None) => self.upper_limit_val,
+        }
     }
 
     /// Validate that an arbitrary value is within the lower and upper limit.

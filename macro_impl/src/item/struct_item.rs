@@ -172,6 +172,8 @@ impl ClampedStructItem {
                 .map(|arg| arg.into_value(kind))
                 .unwrap(),
             full_coverage: !range_seq.has_gaps(),
+            exact_values: None,
+            valid_ranges: Some(range_seq.uniq_ranges()),
         })
     }
 }
