@@ -247,9 +247,9 @@ pub fn impl_conversions(name: &syn::Ident, params: &Params) -> TokenStream {
         });
     }
 
-    if matches!(params.integer, NumberKind::U128) {
+    if matches!(params.integer, NumberKind::I128) {
         conversions.push(quote! {
-            impl From<u128> for #name {
+            impl From<i128> for #name {
                 #[inline(always)]
                 fn from(val: i128) -> Self {
                     Self::from_primitive(val).expect("value should be within bounds")
@@ -271,7 +271,7 @@ pub fn impl_conversions(name: &syn::Ident, params: &Params) -> TokenStream {
 
     if params.is_isize_or_larger() {
         conversions.push(quote! {
-            impl From<usize> for #name {
+            impl From<isize> for #name {
                 #[inline(always)]
                 fn from(val: isize) -> Self {
                     Self::from_primitive(val as #integer).expect("value should be within bounds")
@@ -293,7 +293,7 @@ pub fn impl_conversions(name: &syn::Ident, params: &Params) -> TokenStream {
 
     if params.is_i64_or_larger() {
         conversions.push(quote! {
-            impl From<u64> for #name {
+            impl From<i64> for #name {
                 #[inline(always)]
                 fn from(val: i64) -> Self {
                     Self::from_primitive(val as #integer).expect("value should be within bounds")
@@ -315,7 +315,7 @@ pub fn impl_conversions(name: &syn::Ident, params: &Params) -> TokenStream {
 
     if params.is_i32_or_larger() {
         conversions.push(quote! {
-            impl From<u32> for #name {
+            impl From<i32> for #name {
                 #[inline(always)]
                 fn from(val: i32) -> Self {
                     Self::from_primitive(val as #integer).expect("value should be within bounds")
@@ -337,7 +337,7 @@ pub fn impl_conversions(name: &syn::Ident, params: &Params) -> TokenStream {
 
     if params.is_i16_or_larger() {
         conversions.push(quote! {
-            impl From<u16> for #name {
+            impl From<i16> for #name {
                 #[inline(always)]
                 fn from(val: i16) -> Self {
                     Self::from_primitive(val as #integer).expect("value should be within bounds")
