@@ -346,6 +346,17 @@ mod tests {
         assert!(value.is_invalid());
     }
 
+    clamped! {
+        #[isize; derive(Debug)]
+        enum SignedNumbers {
+            Min(isize::MIN),
+            Neg(..0),
+            Zero(0),
+            Pos(0..),
+            Max(isize::MAX),
+        }
+    }
+
     // #[test]
     // fn test_enum_non_comprehensive() {
     //     clamped! {
@@ -380,38 +391,38 @@ mod tests {
     //     }
     // }
 
-    // #[test]
-    // fn test_enum_nested() {
-    //     clamped! {
-    //         #[usize]
-    //         enum ResponseCode {
-    //             Success[200..300] {
-    //                 Okay(200),
-    //                 Created(201),
-    //                 Accepted(202),
-    //                 Unknown(..),
-    //             },
-    //             Error {
-    //                 Client[400..500] {
-    //                     BadRequest(400),
-    //                     Unauthorized(401),
-    //                     PaymentRequired(402),
-    //                     Forbidden(403),
-    //                     NotFound(404),
-    //                     Unknown(..)
-    //                 },
-    //                 Server[500..600] {
-    //                     Internal(500),
-    //                     NotImplemented(501),
-    //                     BadGateway(502),
-    //                     ServiceUnavailable(503),
-    //                     GatewayTimeout(504),
-    //                     Unknown(..)
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
+    clamped! {
+        #[usize]
+        enum ResponseCode {
+            Success[200..300] {
+                Okay(200),
+                Created(201),
+                Accepted(202),
+                Unknown(..),
+            },
+            Error {
+                Client[400..500] {
+                    BadRequest(400),
+                    Unauthorized(401),
+                    PaymentRequired(402),
+                    Forbidden(403),
+                    NotFound(404),
+                    Unknown(..)
+                },
+                Server[500..600] {
+                    Internal(500),
+                    NotImplemented(501),
+                    BadGateway(502),
+                    ServiceUnavailable(503),
+                    GatewayTimeout(504),
+                    Unknown(..)
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_enum_nested() {}
 
     // #[test]
     // fn test_struct_soft() {

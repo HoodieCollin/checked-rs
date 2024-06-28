@@ -220,10 +220,9 @@ pub fn define_mod(
                         has_catchall = true;
                     }
 
-                    literal_args.push(range.clone());
-
                     let range = range.to_value_range(kind)?;
 
+                    literal_args.push(range.clone());
                     range_seq.insert(range)?;
                 } else {
                     for range in values {
@@ -234,13 +233,9 @@ pub fn define_mod(
                             ));
                         }
 
-                        literal_args.push(NumberArgRange::new_inclusive(
-                            range.first_val(kind).into_number_arg(),
-                            range.last_val(kind).into_number_arg(),
-                        ));
-
                         let range = range.to_value_range(kind)?;
 
+                        literal_args.push(range.clone());
                         range_seq.insert(range)?;
                     }
                 }
