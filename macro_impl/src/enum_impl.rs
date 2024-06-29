@@ -12,7 +12,7 @@ use crate::{
     },
     hard_impl,
     item::enum_item::{ClampedEnumItem, ClampedEnumVariant, ClampedEnumVariantField},
-    params::{DerivedTraits, NumberArg, NumberArgRange, NumberKind, NumberValue, Params},
+    params::{DerivedTraits, NumberArg, NumberKind, NumberValue, Params},
     range_seq::RangeSeq,
 };
 
