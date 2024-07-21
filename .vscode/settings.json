@@ -5,14 +5,17 @@
     "Hasher",
     "idents",
     "impls",
+    "insta",
     "oneofs",
+    "prettyplease",
     "rangemap",
     "Repr",
     "rhai",
     "struct",
     "thiserror",
     "uinteger",
-    "Uninit"
+    "Uninit",
+    "unparse"
   ],
   "[rust]": {
     "editor.indentSize": "tabSize",

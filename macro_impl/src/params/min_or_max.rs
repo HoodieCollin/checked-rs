@@ -31,3 +31,29 @@ impl ToTokens for MinOrMax {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{assert_parse, snapshot};
+
+    #[test]
+    fn parse_min() {
+        assert_parse!(MinOrMax => { MIN } => { MinOrMax::Min(..) });
+    }
+
+    #[test]
+    fn parse_max() {
+        assert_parse!(MinOrMax => { MAX } => { MinOrMax::Max(..) });
+    }
+
+    #[test]
+    fn snapshot_min() {
+        snapshot!(MinOrMax => { MIN });
+    }
+
+    #[test]
+    fn snapshot_max() {
+        snapshot!(MinOrMax => { MAX });
+    }
+}

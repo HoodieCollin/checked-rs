@@ -81,3 +81,129 @@ impl std::fmt::Display for NumberKind {
         write!(f, "{}", kind)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{assert_parse, snapshot};
+
+    #[test]
+    fn parse_u8() {
+        assert_parse!(NumberKind => { u8 } => { NumberKind::U8 });
+    }
+
+    #[test]
+    fn parse_u16() {
+        assert_parse!(NumberKind => { u16 } => { NumberKind::U16 });
+    }
+
+    #[test]
+    fn parse_u32() {
+        assert_parse!(NumberKind => { u32 } => { NumberKind::U32 });
+    }
+
+    #[test]
+    fn parse_u64() {
+        assert_parse!(NumberKind => { u64 } => { NumberKind::U64 });
+    }
+
+    #[test]
+    fn parse_u128() {
+        assert_parse!(NumberKind => { u128 } => { NumberKind::U128 });
+    }
+
+    #[test]
+    fn parse_usize() {
+        assert_parse!(NumberKind => { usize } => { NumberKind::USize });
+    }
+
+    #[test]
+    fn parse_i8() {
+        assert_parse!(NumberKind => { i8 } => { NumberKind::I8 });
+    }
+
+    #[test]
+    fn parse_i16() {
+        assert_parse!(NumberKind => { i16 } => { NumberKind::I16 });
+    }
+
+    #[test]
+    fn parse_i32() {
+        assert_parse!(NumberKind => { i32 } => { NumberKind::I32 });
+    }
+
+    #[test]
+    fn parse_i64() {
+        assert_parse!(NumberKind => { i64 } => { NumberKind::I64 });
+    }
+
+    #[test]
+    fn parse_i128() {
+        assert_parse!(NumberKind => { i128 } => { NumberKind::I128 });
+    }
+
+    #[test]
+    fn parse_isize() {
+        assert_parse!(NumberKind => { isize } => { NumberKind::ISize });
+    }
+
+    #[test]
+    fn snapshot_u8() {
+        snapshot!(NumberKind => { u8 });
+    }
+
+    #[test]
+    fn snapshot_u16() {
+        snapshot!(NumberKind => { u16 });
+    }
+
+    #[test]
+    fn snapshot_u32() {
+        snapshot!(NumberKind => { u32 });
+    }
+
+    #[test]
+    fn snapshot_u64() {
+        snapshot!(NumberKind => { u64 });
+    }
+
+    #[test]
+    fn snapshot_u128() {
+        snapshot!(NumberKind => { u128 });
+    }
+
+    #[test]
+    fn snapshot_usize() {
+        snapshot!(NumberKind => { usize });
+    }
+
+    #[test]
+    fn snapshot_i8() {
+        snapshot!(NumberKind => { i8 });
+    }
+
+    #[test]
+    fn snapshot_i16() {
+        snapshot!(NumberKind => { i16 });
+    }
+
+    #[test]
+    fn snapshot_i32() {
+        snapshot!(NumberKind => { i32 });
+    }
+
+    #[test]
+    fn snapshot_i64() {
+        snapshot!(NumberKind => { i64 });
+    }
+
+    #[test]
+    fn snapshot_i128() {
+        snapshot!(NumberKind => { i128 });
+    }
+
+    #[test]
+    fn snapshot_isize() {
+        snapshot!(NumberKind => { isize });
+    }
+}

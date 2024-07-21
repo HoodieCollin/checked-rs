@@ -1,4 +1,5 @@
 //! # checked-rs-macro-impl
+//!
 //! > Implementation of the procedural macros for checked-rs. This crate is not intended to be used directly.
 //! > Instead, you should use the `checked-rs` crate, which re-exports the public macros from this crate.
 //!
@@ -62,3 +63,59 @@ pub fn clamped(item: ClampedItem) -> TokenStream {
         }
     }
 }
+
+#[cfg(test)]
+macro_rules! snapshot {
+    ($ty:ty => { $($tt:tt)* }) => {{
+        let ts: $ty = match syn::parse2(quote::quote!($($tt)*)) {
+            Ok(ts) => ts,
+            Err(err) => panic!("Failed to parse as `{}`: {}", stringify!($ty), err),
+        };
+
+        insta::assert_snapshot!(&ts.to_token_stream().to_string());
+    }};
+    ($ty:ty => { $($tt:tt)* } => Formatted) => {{
+        let ts: $ty = match syn::parse2(quote::quote!($($tt)*)) {
+            Ok(ts) => ts,
+            Err(err) => panic!("Failed to parse as `{}`: {}", stringify!($ty), err),
+        };
+
+        insta::assert_snapshot!(prettyplease::unparse(
+            &syn::parse_file(&ts.to_token_stream().to_string()).unwrap()
+        ));
+    }};
+}
+
+#[cfg(test)]
+pub(crate) use snapshot;
+
+#[cfg(test)]
+macro_rules! assert_parse {
+    ($ty:ty => { $($tt:tt)* }) => {{
+        match syn::parse2::<$ty>(quote::quote!($($tt)*)) {
+            Ok(..) => { /* Success */ },
+            Err(err) => panic!("Failed to parse: {}", err),
+        };
+    }};
+
+    ($ty:ty => { $($tt:tt)* } => !) => {{
+        match syn::parse2::<$ty>(quote::quote!($($tt)*)) {
+            Ok(..) => panic!("Expected to fail parsing"),
+            Err(..) => { /* Success */ }
+        }
+    }};
+
+    ($ty:ty => { $($tt:tt)* } => { $($exp:tt)* }) => {{
+        let x = match syn::parse2::<$ty>(quote::quote!($($tt)*)) {
+            Ok(x) => x,
+            Err(err) => panic!("Failed to parse: {}", err),
+        };
+
+        if !matches!(x, $($exp)*) {
+            panic!("Expected {:?}, got {:?}", quote::quote!($($exp)*), quote::quote!(x));
+        }
+    }};
+}
+
+#[cfg(test)]
+pub(crate) use assert_parse;

@@ -58,3 +58,40 @@ impl std::fmt::Debug for AsSoftOrHard {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{assert_parse, snapshot};
+
+    #[test]
+    fn parse_soft() {
+        assert_parse!(AsSoftOrHard => { as Soft } => { AsSoftOrHard::Soft { .. } });
+    }
+
+    #[test]
+    fn parse_hard() {
+        assert_parse!(AsSoftOrHard => { as Hard } => { AsSoftOrHard::Hard { .. } });
+    }
+
+    #[test]
+    fn parse_fails_without_as() {
+        assert_parse!(AsSoftOrHard => { Soft } => !);
+        assert_parse!(AsSoftOrHard => { Hard } => !);
+    }
+
+    #[test]
+    fn parse_fails_with_unknown_keyword() {
+        assert_parse!(AsSoftOrHard => { as Unknown } => !);
+    }
+
+    #[test]
+    fn to_tokens_soft() {
+        snapshot!(AsSoftOrHard => { as Soft });
+    }
+
+    #[test]
+    fn to_tokens_hard() {
+        snapshot!(AsSoftOrHard => { as Hard });
+    }
+}

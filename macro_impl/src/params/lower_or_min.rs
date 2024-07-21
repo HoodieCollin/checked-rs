@@ -30,3 +30,29 @@ impl ToTokens for LowerOrMin {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{assert_parse, snapshot};
+
+    #[test]
+    fn parse_lower() {
+        assert_parse!(LowerOrMin => { lower } => { LowerOrMin::Lower(..) });
+    }
+
+    #[test]
+    fn parse_min() {
+        assert_parse!(LowerOrMin => { min } => { LowerOrMin::Min(..) });
+    }
+
+    #[test]
+    fn snapshot_lower() {
+        snapshot!(LowerOrMin => { lower });
+    }
+
+    #[test]
+    fn snapshot_min() {
+        snapshot!(LowerOrMin => { min });
+    }
+}

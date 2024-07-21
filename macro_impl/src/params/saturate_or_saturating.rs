@@ -31,3 +31,29 @@ impl ToTokens for SaturateOrSaturating {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{assert_parse, snapshot};
+
+    #[test]
+    fn parse_saturate() {
+        assert_parse!(SaturateOrSaturating => { Saturate } => { SaturateOrSaturating::Saturate(..) });
+    }
+
+    #[test]
+    fn parse_saturating() {
+        assert_parse!(SaturateOrSaturating => { Saturating } => { SaturateOrSaturating::Saturating(..) });
+    }
+
+    #[test]
+    fn snapshot_saturate() {
+        snapshot!(SaturateOrSaturating => { Saturate });
+    }
+
+    #[test]
+    fn snapshot_saturating() {
+        snapshot!(SaturateOrSaturating => { Saturating });
+    }
+}

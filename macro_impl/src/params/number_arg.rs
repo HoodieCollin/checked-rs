@@ -5,7 +5,30 @@ use syn::{parse::Parse, parse_quote, spanned::Spanned};
 
 use super::{MinOrMax, NumberKind, NumberValue};
 
-/// Represents the number argument. It can be a literal or a the MIN/MAX constant.
+/// Represents a numerical argument obtained from parsing proc macro input tokens.
+///
+/// `NumberArg` can represent three kinds of numerical data:
+/// - A literal value directly specified in the input.
+/// - A primitive number constant, which is a predefined constant value.
+/// - An expression that is evaluated at compile time using the Rhai scripting engine.
+///
+/// This enum is designed to work within the context of procedural macros, where it helps
+/// in interpreting and manipulating numerical inputs. It provides flexibility in handling
+/// both simple numerical values and complex expressions that need to be evaluated.
+///
+/// The `NumberArg` can be converted into a `NumberValue` type through the `into_value` method.
+/// This conversion allows for direct operations on the underlying numerical value, supporting
+/// various primitive number types (e.g., `u8`, `u16`, `i32`, `usize`, etc.).
+///
+/// Example usage:
+/// ```
+/// let num_arg: NumberArg = parse_macro_input!(input as NumberArg);
+/// let num_value: NumberValue = num_arg.into_value(NumberKind::U32);
+/// // Now `num_value` can be used for further numerical operations.
+/// ```
+///
+/// Note: The `into_value` method panics if the conversion fails, so it should be used
+/// within a context where panicking is acceptable or handled appropriately.
 #[derive(Clone)]
 pub enum NumberArg {
     Literal(syn::LitInt),
@@ -90,6 +113,7 @@ impl std::fmt::Display for NumberArg {
 impl NumberArg {
     pub const LIMITS_INIT: (Option<Self>, Option<Self>) = (None, None);
 
+    /// Create a new `NumberArg` instance for a `NumberKind`'s minimum value.
     pub fn new_min_constant(kind: NumberKind) -> Self {
         Self::Constant {
             kind,
@@ -98,6 +122,7 @@ impl NumberArg {
         }
     }
 
+    /// Create a new `NumberArg` instance for a `NumberKind`'s maximum value.
     pub fn new_max_constant(kind: NumberKind) -> Self {
         Self::Constant {
             kind,
@@ -106,14 +131,17 @@ impl NumberArg {
         }
     }
 
+    /// Helper method to create a `NumberArg` instance from a `syn::Expr`. Mostly useful for testing.
     pub fn from_expr(expr: &syn::Expr) -> Self {
         parse_quote!(#expr)
     }
 
+    /// Helper method to create a `NumberArg` instance from a `syn::LitInt`. Mostly useful for testing.
     pub fn from_lit(lit: &syn::LitInt) -> Self {
         Self::Literal(lit.clone())
     }
 
+    /// Helper method to create a pair of `NumberArg` instances from a `syn::ExprRange`. Mostly useful for testing.
     pub fn from_range_expr(kind: NumberKind, expr: &syn::ExprRange) -> (Self, Self) {
         let start: Option<NumberArg> = expr.start.as_ref().map(|expr| parse_quote!(#expr));
         let end: Option<NumberArg> = expr.end.as_ref().map(|expr| parse_quote!(#expr));
@@ -124,6 +152,7 @@ impl NumberArg {
         )
     }
 
+    /// Create a new `NumberArg` instance from the lesser of two inputs.
     pub fn min(&self, other: &Self, kind: NumberKind) -> Self {
         let a = self.into_value(kind);
         let b = other.into_value(kind);
@@ -135,6 +164,7 @@ impl NumberArg {
         }
     }
 
+    /// Create a new `NumberArg` instance from the greater of two inputs.
     pub fn max(&self, other: &Self, kind: NumberKind) -> Self {
         let a = self.into_value(kind);
         let b = other.into_value(kind);
@@ -146,6 +176,7 @@ impl NumberArg {
         }
     }
 
+    /// Convert the `NumberArg` into a `NumberValue` instance.
     pub fn into_value(&self, kind: NumberKind) -> NumberValue {
         match kind {
             NumberKind::U8 => NumberValue::U8(match self.base10_parse() {

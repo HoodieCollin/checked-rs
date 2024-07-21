@@ -44,6 +44,12 @@
   [workspace.dependencies.rangemap]
     version = "1.5"
 
+  [workspace.dependencies.insta]
+    version = "1.39"
+
+  [workspace.dependencies.prettyplease]
+    version = "0.2"
+
 [dependencies.anyhow]
   workspace = true
 

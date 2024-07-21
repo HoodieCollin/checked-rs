@@ -29,3 +29,29 @@ impl ToTokens for SemiOrComma {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{assert_parse, snapshot};
+
+    #[test]
+    fn parse_semi() {
+        assert_parse!(SemiOrComma => { ; } => { SemiOrComma::Semi(..) });
+    }
+
+    #[test]
+    fn parse_comma() {
+        assert_parse!(SemiOrComma => { , } => { SemiOrComma::Comma(..) });
+    }
+
+    #[test]
+    fn snapshot_semi() {
+        snapshot!(SemiOrComma => { ; });
+    }
+
+    #[test]
+    fn snapshot_comma() {
+        snapshot!(SemiOrComma => { , });
+    }
+}

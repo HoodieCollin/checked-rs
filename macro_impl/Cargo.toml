@@ -36,4 +36,5 @@
     workspace = true
 
 [dev-dependencies]
-  prettyplease = "0.2"
+  insta        = { workspace = true }
+  prettyplease = { workspace = true }

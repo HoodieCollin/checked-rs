@@ -1,0 +1,6 @@
+---
+source: macro_impl/src/params/as_soft_or_hard.rs
+assertion_line: 95
+expression: "&ts.to_token_stream().to_string()"
+---
+as Hard

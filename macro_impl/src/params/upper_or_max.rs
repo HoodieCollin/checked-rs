@@ -30,3 +30,29 @@ impl ToTokens for UpperOrMax {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{assert_parse, snapshot};
+
+    #[test]
+    fn parse_upper() {
+        assert_parse!(UpperOrMax => { upper } => { UpperOrMax::Upper(..) });
+    }
+
+    #[test]
+    fn parse_max() {
+        assert_parse!(UpperOrMax => { max } => { UpperOrMax::Max(..) });
+    }
+
+    #[test]
+    fn snapshot_upper() {
+        snapshot!(UpperOrMax => { upper });
+    }
+
+    #[test]
+    fn snapshot_max() {
+        snapshot!(UpperOrMax => { max });
+    }
+}

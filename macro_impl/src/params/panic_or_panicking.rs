@@ -31,3 +31,29 @@ impl ToTokens for PanicOrPanicking {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{assert_parse, snapshot};
+
+    #[test]
+    fn parse_panic() {
+        assert_parse!(PanicOrPanicking => { Panic } => { PanicOrPanicking::Panic(..) });
+    }
+
+    #[test]
+    fn parse_panicking() {
+        assert_parse!(PanicOrPanicking => { Panicking } => { PanicOrPanicking::Panicking(..) });
+    }
+
+    #[test]
+    fn snapshot_panic() {
+        snapshot!(PanicOrPanicking => { Panic });
+    }
+
+    #[test]
+    fn snapshot_panicking() {
+        snapshot!(PanicOrPanicking => { Panicking });
+    }
+}

@@ -4,7 +4,6 @@ use syn::parse::Parse;
 
 use super::{kw, PanicOrPanicking, SaturateOrSaturating};
 
-/// Represents the behavior argument. It can be `Saturating` or `Panicking`.
 #[derive(Clone)]
 pub enum BehaviorArg {
     Saturating(SaturateOrSaturating),
@@ -42,5 +41,41 @@ impl std::fmt::Debug for BehaviorArg {
             Self::Saturating(..) => write!(f, "Saturating"),
             Self::Panicking(..) => write!(f, "Panicking"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{assert_parse, snapshot};
+
+    #[test]
+    fn parse_saturating() {
+        assert_parse!(BehaviorArg => { Saturating } => { BehaviorArg::Saturating(..) });
+    }
+
+    #[test]
+    fn parse_saturate() {
+        assert_parse!(BehaviorArg => { Saturate } => { BehaviorArg::Saturating(..) });
+    }
+
+    #[test]
+    fn parse_panicking() {
+        assert_parse!(BehaviorArg => { Panicking } => { BehaviorArg::Panicking(..) });
+    }
+
+    #[test]
+    fn parse_panic() {
+        assert_parse!(BehaviorArg => { Panic } => { BehaviorArg::Panicking(..) });
+    }
+
+    #[test]
+    fn to_tokens_saturating() {
+        snapshot!(BehaviorArg => { Saturating });
+    }
+
+    #[test]
+    fn to_tokens_panicking() {
+        snapshot!(BehaviorArg => { Panicking });
     }
 }

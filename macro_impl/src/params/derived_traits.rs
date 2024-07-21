@@ -48,3 +48,19 @@ impl std::fmt::Debug for DerivedTraits {
             .finish_non_exhaustive()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{assert_parse, snapshot};
+
+    #[test]
+    fn parse_derive_traits() {
+        assert_parse!(DerivedTraits => { derive(Debug) });
+    }
+
+    #[test]
+    fn snapshot_derive_traits() {
+        snapshot!(DerivedTraits => { derive(Debug) });
+    }
+}
