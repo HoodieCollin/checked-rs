@@ -1,10 +1,10 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::params::{attr_params::AttrParams, BehaviorArg, NumberArg, NumberKind};
+use crate::params::{BehaviorArg, NumberArg, NumberKind, Params};
 
-pub fn define_guard(name: &syn::Ident, guard_name: &syn::Ident, attr: &AttrParams) -> TokenStream {
-    let integer = &attr.integer;
+pub fn define_guard(name: &syn::Ident, guard_name: &syn::Ident, params: &Params) -> TokenStream {
+    let integer = params.integer;
 
     quote! {
         pub struct #guard_name<'a>(#integer, &'a mut #name);
@@ -89,8 +89,8 @@ pub fn define_guard(name: &syn::Ident, guard_name: &syn::Ident, attr: &AttrParam
     }
 }
 
-pub fn impl_deref(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
-    let integer = &attr.integer;
+pub fn impl_deref(name: &syn::Ident, params: &Params) -> TokenStream {
+    let integer = params.integer;
 
     quote! {
         impl std::ops::Deref for #name {
@@ -111,11 +111,11 @@ pub fn impl_deref(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
     }
 }
 
-pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
-    let integer = &attr.integer;
+pub fn impl_conversions(name: &syn::Ident, params: &Params) -> TokenStream {
+    let integer = params.integer;
     let mut conversions = Vec::with_capacity(24);
 
-    if attr.is_u128_or_smaller() {
+    if params.is_u128_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for u128 {
                 #[inline(always)]
@@ -126,7 +126,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if matches!(attr.kind(), NumberKind::U128) {
+    if matches!(params.integer, NumberKind::U128) {
         conversions.push(quote! {
             impl From<u128> for #name {
                 #[inline(always)]
@@ -137,7 +137,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_usize_or_smaller() {
+    if params.is_usize_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for usize {
                 #[inline(always)]
@@ -148,7 +148,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_usize_or_larger() {
+    if params.is_usize_or_larger() {
         conversions.push(quote! {
             impl From<usize> for #name {
                 #[inline(always)]
@@ -159,7 +159,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_u64_or_smaller() {
+    if params.is_u64_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for u64 {
                 #[inline(always)]
@@ -170,7 +170,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_u64_or_larger() {
+    if params.is_u64_or_larger() {
         conversions.push(quote! {
             impl From<u64> for #name {
                 #[inline(always)]
@@ -181,7 +181,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_u32_or_smaller() {
+    if params.is_u32_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for u32 {
                 #[inline(always)]
@@ -192,7 +192,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_u32_or_larger() {
+    if params.is_u32_or_larger() {
         conversions.push(quote! {
             impl From<u32> for #name {
                 #[inline(always)]
@@ -203,7 +203,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_u16_or_smaller() {
+    if params.is_u16_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for u16 {
                 #[inline(always)]
@@ -214,7 +214,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_u16_or_larger() {
+    if params.is_u16_or_larger() {
         conversions.push(quote! {
             impl From<u16> for #name {
                 #[inline(always)]
@@ -225,7 +225,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if matches!(attr.kind(), NumberKind::U8) {
+    if matches!(params.integer, NumberKind::U8) {
         conversions.push(quote! {
             impl From<#name> for u8 {
                 #[inline(always)]
@@ -236,7 +236,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_i128_or_smaller() {
+    if params.is_i128_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for i128 {
                 #[inline(always)]
@@ -247,9 +247,9 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if matches!(attr.kind(), NumberKind::U128) {
+    if matches!(params.integer, NumberKind::I128) {
         conversions.push(quote! {
-            impl From<u128> for #name {
+            impl From<i128> for #name {
                 #[inline(always)]
                 fn from(val: i128) -> Self {
                     Self::from_primitive(val).expect("value should be within bounds")
@@ -258,7 +258,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_isize_or_smaller() {
+    if params.is_isize_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for isize {
                 #[inline(always)]
@@ -269,9 +269,9 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_isize_or_larger() {
+    if params.is_isize_or_larger() {
         conversions.push(quote! {
-            impl From<usize> for #name {
+            impl From<isize> for #name {
                 #[inline(always)]
                 fn from(val: isize) -> Self {
                     Self::from_primitive(val as #integer).expect("value should be within bounds")
@@ -280,7 +280,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_i64_or_smaller() {
+    if params.is_i64_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for i64 {
                 #[inline(always)]
@@ -291,9 +291,9 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_i64_or_larger() {
+    if params.is_i64_or_larger() {
         conversions.push(quote! {
-            impl From<u64> for #name {
+            impl From<i64> for #name {
                 #[inline(always)]
                 fn from(val: i64) -> Self {
                     Self::from_primitive(val as #integer).expect("value should be within bounds")
@@ -302,7 +302,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_i32_or_smaller() {
+    if params.is_i32_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for i32 {
                 #[inline(always)]
@@ -313,9 +313,9 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_i32_or_larger() {
+    if params.is_i32_or_larger() {
         conversions.push(quote! {
-            impl From<u32> for #name {
+            impl From<i32> for #name {
                 #[inline(always)]
                 fn from(val: i32) -> Self {
                     Self::from_primitive(val as #integer).expect("value should be within bounds")
@@ -324,7 +324,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_i16_or_smaller() {
+    if params.is_i16_or_smaller() {
         conversions.push(quote! {
             impl From<#name> for i16 {
                 #[inline(always)]
@@ -335,9 +335,9 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_i16_or_larger() {
+    if params.is_i16_or_larger() {
         conversions.push(quote! {
-            impl From<u16> for #name {
+            impl From<i16> for #name {
                 #[inline(always)]
                 fn from(val: i16) -> Self {
                     Self::from_primitive(val as #integer).expect("value should be within bounds")
@@ -346,7 +346,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if matches!(attr.kind(), NumberKind::I8) {
+    if matches!(params.integer, NumberKind::I8) {
         conversions.push(quote! {
             impl From<#name> for i8 {
                 #[inline(always)]
@@ -357,7 +357,7 @@ pub fn impl_conversions(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
         });
     }
 
-    if attr.is_signed() {
+    if params.is_signed() {
         conversions.push(quote! {
             impl From<i8> for #name {
                 #[inline(always)]
@@ -428,8 +428,8 @@ pub fn impl_self_cmp(name: &syn::Ident) -> TokenStream {
     }
 }
 
-pub fn impl_other_eq(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
-    let integer = &attr.integer;
+pub fn impl_other_eq(name: &syn::Ident, params: &Params) -> TokenStream {
+    let integer = params.integer;
 
     quote! {
         impl std::cmp::PartialEq<#integer> for #name
@@ -450,8 +450,8 @@ pub fn impl_other_eq(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
     }
 }
 
-pub fn impl_other_compare(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
-    let integer = &attr.integer;
+pub fn impl_other_compare(name: &syn::Ident, params: &Params) -> TokenStream {
+    let integer = params.integer;
 
     quote! {
         impl std::cmp::PartialOrd<#integer> for #name
@@ -474,26 +474,28 @@ pub fn impl_other_compare(name: &syn::Ident, attr: &AttrParams) -> TokenStream {
 
 pub fn impl_binary_op(
     name: &syn::Ident,
-    attr: &AttrParams,
+    params: &Params,
     trait_name: syn::Ident,
     method_name: syn::Ident,
     behavior: &BehaviorArg,
-    lower: Option<NumberArg>,
-    upper: Option<NumberArg>,
+    explicit_bounds: Option<(NumberArg, NumberArg)>,
 ) -> TokenStream {
-    let kind = attr.kind();
-    let integer = &attr.integer;
-
-    let lower = lower
-        .map(|n| n.into_literal_as_tokens(kind))
-        .unwrap_or(attr.lower_limit_token());
-
-    let upper = upper
-        .map(|n| n.into_literal_as_tokens(kind))
-        .unwrap_or(attr.upper_limit_token());
-
+    let integer = params.integer;
     let assign_trait_name = format_ident!("{}Assign", trait_name);
     let assign_method_name = format_ident!("{}_assign", method_name);
+
+    let op_params = if let Some((lower, upper)) = explicit_bounds {
+        quote! {
+            OpBehaviorParams::Simple {
+                min: #lower,
+                max: #upper,
+            }
+        }
+    } else {
+        quote! {
+            self.op_behavior_params()
+        }
+    };
 
     quote! {
         impl std::ops::#trait_name for #name {
@@ -501,7 +503,13 @@ pub fn impl_binary_op(
 
             #[inline(always)]
             fn #method_name(self, rhs: #name) -> #name {
-                Self::from_primitive(#behavior::#method_name(self.into_primitive(), rhs.into_primitive(), #lower, #upper)).expect("arithmetic operations should be infallible")
+                unsafe {
+                    Self::from_primitive_unchecked(#behavior::#method_name(
+                        self.into_primitive(),
+                        rhs.into_primitive(),
+                        #op_params
+                    ))
+                }
             }
         }
 
@@ -510,7 +518,13 @@ pub fn impl_binary_op(
 
             #[inline(always)]
             fn #method_name(self, rhs: #integer) -> #name {
-                Self::from_primitive(#behavior::#method_name(self.into_primitive(), rhs, #lower, #upper)).expect("arithmetic operations should be infallible")
+                unsafe {
+                    Self::from_primitive_unchecked(#behavior::#method_name(
+                        self.into_primitive(),
+                        rhs,
+                        #op_params
+                    ))
+                }
             }
         }
 
@@ -519,7 +533,10 @@ pub fn impl_binary_op(
 
             #[inline(always)]
             fn #method_name(self, rhs: #name) -> #integer {
-                Panicking::#method_name(self, rhs.into_primitive(), #integer::MIN, #integer::MAX)
+                Panicking::#method_name(self, rhs.into_primitive(), OpBehaviorParams::Simple {
+                    min: #integer::MIN,
+                    max: #integer::MAX,
+                })
             }
         }
 
@@ -528,39 +545,64 @@ pub fn impl_binary_op(
 
             #[inline(always)]
             fn #method_name(self, rhs: #name) -> std::num::Saturating<#integer> {
-                std::num::Saturating(Saturating::#method_name(self.0, rhs.into_primitive(), #integer::MIN, #integer::MAX))
+                std::num::Saturating(Saturating::#method_name(self.0, rhs.into_primitive(), OpBehaviorParams::Simple {
+                    min: #integer::MIN,
+                    max: #integer::MAX,
+                }))
             }
         }
 
         impl std::ops::#assign_trait_name for #name {
             #[inline(always)]
             fn #assign_method_name(&mut self, rhs: #name) {
-                *self = Self::from_primitive(
-                    #behavior::#method_name(self.into_primitive(), rhs.into_primitive(), #lower, #upper)
-                ).expect("assignable operations should be infallible");
+                *self = unsafe {
+                    Self::from_primitive_unchecked(#behavior::#method_name(
+                        self.into_primitive(),
+                        rhs.into_primitive(),
+                        #op_params
+                    ))
+                };
             }
         }
 
         impl std::ops::#assign_trait_name<#integer> for #name {
             #[inline(always)]
             fn #assign_method_name(&mut self, rhs: #integer) {
-                *self = Self::from_primitive(
-                    #behavior::#method_name(self.into_primitive(), rhs, #lower, #upper)
-                ).expect("assignable operations should be infallible");
+                *self = unsafe {
+                    Self::from_primitive_unchecked(#behavior::#method_name(
+                        self.into_primitive(),
+                        rhs,
+                        #op_params
+                    ))
+                };
             }
         }
 
         impl std::ops::#assign_trait_name<#name> for #integer {
             #[inline(always)]
             fn #assign_method_name(&mut self, rhs: #name) {
-                *self = Panicking::#method_name(*self, rhs.into_primitive(), #integer::MIN, #integer::MAX);
+                *self = Panicking::#method_name(
+                    *self,
+                    rhs.into_primitive(),
+                    OpBehaviorParams::Simple {
+                        min: #integer::MIN,
+                        max: #integer::MAX,
+                    }
+                );
             }
         }
 
         impl std::ops::#assign_trait_name<#name> for std::num::Saturating<#integer> {
             #[inline(always)]
             fn #assign_method_name(&mut self, rhs: #name) {
-                *self = std::num::Saturating(Saturating::#method_name(self.0, rhs.into_primitive(), #integer::MIN, #integer::MAX));
+                *self = std::num::Saturating(Saturating::#method_name(
+                    self.0,
+                    rhs.into_primitive(),
+                    OpBehaviorParams::Simple {
+                        min: #integer::MIN,
+                        max: #integer::MAX,
+                    }
+                ));
             }
         }
     }
